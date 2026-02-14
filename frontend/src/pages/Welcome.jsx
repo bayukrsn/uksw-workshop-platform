@@ -67,7 +67,7 @@ export default function Welcome() {
                         </h1>
 
                         <p className="text-text-muted text-lg md:text-xl font-light leading-relaxed max-w-[600px] mt-4">
-                            The Workshop Registration Period is now open. All systems are go. Prepare your schedule.
+                            The Learning Platform is on your hands. All systems are go. Prepare your schedule.
                         </p>
                     </div>
 
@@ -95,7 +95,7 @@ export default function Welcome() {
                             <div className="w-1 h-1 rounded-full bg-border-dark" />
                             <div className="flex items-center gap-2">
                                 <span className="material-symbols-outlined text-[16px]">school</span>
-                                <span className="text-xs font-medium">New way of studying</span>
+                                <span className="text-xs font-medium">Always ready to help unlocking new skills</span>
                             </div>
                         </div>
                     </div>
