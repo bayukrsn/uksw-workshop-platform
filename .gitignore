@@ -21,7 +21,6 @@ go.work
 vendor/
 api-gateway
 api.exe
-backend-service
 backend_*.exe
 
 # Windows scripts (Linux only)
