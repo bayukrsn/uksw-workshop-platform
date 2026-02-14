@@ -1,0 +1,733 @@
+import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { useAuth } from '../context/AuthContext'
+import { api } from '../api/client'
+import Header from '../components/Header'
+import LoadingSpinner from '../components/LoadingSpinner'
+import SeatMap from '../components/SeatMap'
+
+export default function WorkshopSelection() {
+    const { user, logout } = useAuth()
+    const navigate = useNavigate()
+    const [workshops, setWorkshops] = useState([])
+    const [myWorkshops, setMyWorkshops] = useState([])
+    const [isLoading, setIsLoading] = useState(true)
+    const [totalCredits, setTotalCredits] = useState(0)
+    const [maxCredits, setMaxCredits] = useState(24)
+    const [searchTerm, setSearchTerm] = useState('')
+    const [selectedWorkshopType, setSelectedWorkshopType] = useState('all')
+    const [notification, setNotification] = useState(null)
+    const [dropId, setDropId] = useState(null)
+    const [selectedWorkshopForSeat, setSelectedWorkshopForSeat] = useState(null)
+    const [selectedSeat, setSelectedSeat] = useState(null)
+    const [showSessionExpired, setShowSessionExpired] = useState(false)
+    const [creditWarning, setCreditWarning] = useState(null) // { workshopName, workshopCredits, totalAfter }
+
+    const showNotification = (message, type = 'success') => {
+        setNotification({ message, type })
+        setTimeout(() => setNotification(null), 3000)
+    }
+
+    const [timeLeft, setTimeLeft] = useState(0)
+
+    useEffect(() => {
+        loadWorkshops()
+        api.connectWebSocket(handleQuotaUpdate)
+
+        // Timer countdown
+        const timerInterval = setInterval(() => {
+            setTimeLeft(prev => {
+                const newTime = Math.max(0, prev - 1)
+                // Check if session expired
+                if (newTime === 0 && prev > 0) {
+                    setShowSessionExpired(true)
+                }
+                return newTime
+            })
+        }, 1000)
+
+        return () => {
+            clearInterval(timerInterval)
+            api.disconnectWebSocket()
+        }
+    }, [])
+
+    const loadWorkshops = async () => {
+        setIsLoading(true)
+        try {
+            // Check Queue Status first
+            const queueStatus = await api.getQueueStatus()
+
+            // Strict enforcement: Must be in queue AND active
+            if (!queueStatus.inQueue || queueStatus.status === 'WAITING') {
+                navigate('/queue')
+                return
+            }
+
+            // Set initial time
+            if (queueStatus.remainingSeconds) {
+                setTimeLeft(queueStatus.remainingSeconds)
+            }
+
+            const [availableRes, myRes] = await Promise.all([
+                api.getAvailableWorkshops(),
+                api.getMyWorkshops()
+            ])
+
+            setWorkshops(availableRes.workshops || availableRes.courses || [])
+            setMyWorkshops(myRes.workshops || myRes.courses || [])
+            setTotalCredits(myRes.totalCredits || 0)
+            setMaxCredits(myRes.maxCredits || 24)
+        } catch (err) {
+            console.error('Failed to load workshops:', err)
+        } finally {
+            setIsLoading(false)
+        }
+    }
+
+    const formatTime = (seconds) => {
+        const mins = Math.floor(seconds / 60)
+        const secs = seconds % 60
+        return `${mins}:${secs.toString().padStart(2, '0')}`
+    }
+
+    const handleQuotaUpdate = (message) => {
+        if (message.type === 'QUOTA_UPDATE') {
+            setWorkshops(prev => prev.map(workshop =>
+                workshop.sessionId === message.classId || workshop.classId === message.classId
+                    ? { ...workshop, enrolled: message.enrolled }
+                    : workshop
+            ))
+        }
+    }
+
+    const handleAddWorkshop = async (sessionId, requiresSeat) => {
+        // Validate sessionId
+        if (!sessionId || sessionId.trim() === '') {
+            showNotification('Invalid workshop session. Please try again.', 'error')
+            return
+        }
+
+        // Find the workshop to check credits and capacity
+        const workshop = workshops.find(w => (w.sessionId || w.classId) === sessionId)
+        if (!workshop) {
+            showNotification('Workshop not found', 'error')
+            return
+        }
+
+        // Check if workshop is full
+        if (workshop.enrolled >= workshop.quota) {
+            showNotification('This workshop is already full. No seats available.', 'error')
+            return
+        }
+
+        // Check credit limit
+        const newTotal = totalCredits + (workshop.credits || 0)
+        if (newTotal > maxCredits) {
+            setCreditWarning({
+                workshopName: workshop.name,
+                workshopCredits: workshop.credits,
+                totalAfter: newTotal,
+            })
+            return
+        }
+
+        if (requiresSeat) {
+            // Open seat selection modal
+            setSelectedWorkshopForSeat(workshop)
+        } else {
+            // Direct enrollment without seat
+            await enrollWorkshopDirect(sessionId)
+        }
+    }
+
+    const enrollWorkshopDirect = async (sessionId, seatId = null) => {
+        try {
+            const response = await api.enrollWorkshop(sessionId, seatId)
+            if (response.success) {
+                setTotalCredits(response.totalCredits)
+                showNotification('Workshop enrolled successfully')
+                loadWorkshops()
+                setSelectedWorkshopForSeat(null)
+                setSelectedSeat(null)
+            }
+        } catch (err) {
+            showNotification(err.message, 'error')
+        }
+    }
+
+    const handleSeatSelected = (seat) => {
+        setSelectedSeat(seat)
+    }
+
+    const handleCancelSeatSelection = async () => {
+        // Release the reserved seat if user closes modal without confirming
+        if (selectedSeat) {
+            try {
+                await api.releaseSeat(selectedSeat.id)
+            } catch (err) {
+                console.error('Failed to release seat on cancel:', err)
+            }
+        }
+        setSelectedWorkshopForSeat(null)
+        setSelectedSeat(null)
+    }
+
+    const confirmEnrollmentWithSeat = async () => {
+        if (!selectedWorkshopForSeat || !selectedSeat) return
+        await enrollWorkshopDirect(selectedWorkshopForSeat.sessionId || selectedWorkshopForSeat.classId, selectedSeat.id)
+    }
+
+    const handleDropWorkshop = (enrollmentId, workshop) => {
+        // Client-side check for registration status
+        if (workshop) {
+            const now = new Date()
+            const regEnd = workshop.registrationEnd ? new Date(workshop.registrationEnd) : null
+
+            if (regEnd && now > regEnd) {
+                showNotification('Registration has closed. You cannot drop this workshop.', 'error')
+                return
+            }
+        }
+        setDropId(enrollmentId)
+    }
+
+    const confirmDrop = async () => {
+        if (!dropId) return
+
+        try {
+            const response = await api.dropWorkshop(dropId)
+            if (response.success) {
+                showNotification('Workshop dropped successfully')
+                loadWorkshops()
+            }
+        } catch (err) {
+            // Handle specific backend error codes if they bubble up, mostly standard message
+            if (err.message === "REGISTRATION_CLOSED") {
+                showNotification('Registration has closed. You cannot drop this workshop.', 'error')
+            } else {
+                showNotification(err.message, 'error')
+            }
+        } finally {
+            setDropId(null)
+        }
+    }
+
+    const handleFinish = () => {
+        // Navigate to summary page
+        navigate('/success')
+    }
+
+    const handleSessionExpiredClose = async () => {
+        await logout()
+        navigate('/login')
+    }
+
+    // Merge workshops with my enrolled workshops
+    const enrichedWorkshops = workshops.map(workshop => {
+        const enrolled = myWorkshops.find(m => m.session_id === (workshop.sessionId || workshop.classId))
+        return { ...workshop, isEnrolled: !!enrolled, enrollmentId: enrolled?.id }
+    })
+
+    const filteredWorkshops = enrichedWorkshops.filter(workshop => {
+        const matchesSearch = workshop.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            workshop.code?.toLowerCase().includes(searchTerm.toLowerCase())
+        const matchesType = selectedWorkshopType === 'all' ||
+            workshop.workshopType?.toLowerCase() === selectedWorkshopType.toLowerCase()
+        return matchesSearch && matchesType
+    })
+
+    if (isLoading) {
+        return (
+            <div className="bg-background-dark min-h-screen flex items-center justify-center">
+                <LoadingSpinner size="lg" text="Loading workshops..." />
+            </div>
+        )
+    }
+
+    return (
+        <div className="bg-background-dark min-h-screen flex flex-col text-white overflow-hidden">
+            <Header title="UKSW Workshop Platform" />
+
+            {/* Notification Toast */}
+            {notification && (
+                <div className={`fixed top-24 right-6 z-50 px-6 py-4 rounded-lg shadow-xl border flex items-center gap-3 animate-in fade-in slide-in-from-top-4 ${notification.type === 'error'
+                    ? 'bg-red-900/90 border-red-500 text-white shadow-red-900/20'
+                    : 'bg-green-900/90 border-green-500 text-white shadow-green-900/20'
+                    }`}>
+                    <span className="material-symbols-outlined">
+                        {notification.type === 'error' ? 'error' : 'check_circle'}
+                    </span>
+                    <span className="font-bold">{notification.message}</span>
+                </div>
+            )}
+
+            {/* Credit Limit Exceeded Modal */}
+            {creditWarning && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in">
+                    <div className="bg-surface-dark border border-yellow-500/50 p-6 rounded-xl shadow-2xl max-w-sm w-full mx-4 animate-in zoom-in-95">
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="p-2.5 bg-yellow-500/20 rounded-xl">
+                                <span className="material-symbols-outlined text-yellow-400 text-3xl">warning</span>
+                            </div>
+                            <div>
+                                <h3 className="text-lg font-bold text-white">Credit Limit Exceeded</h3>
+                                <p className="text-yellow-400/70 text-xs">Cannot add this workshop</p>
+                            </div>
+                        </div>
+                        <div className="bg-background-dark/60 rounded-lg p-4 mb-4 space-y-2">
+                            <div className="flex justify-between text-sm">
+                                <span className="text-text-muted">Workshop:</span>
+                                <span className="text-white font-bold">{creditWarning.workshopName}</span>
+                            </div>
+                            <div className="flex justify-between text-sm">
+                                <span className="text-text-muted">Workshop Credits:</span>
+                                <span className="text-yellow-400 font-bold">{creditWarning.workshopCredits} Credits</span>
+                            </div>
+                            <div className="h-px bg-border-dark my-1"></div>
+                            <div className="flex justify-between text-sm">
+                                <span className="text-text-muted">Your Current Credits:</span>
+                                <span className="text-white font-bold">{totalCredits} Credits</span>
+                            </div>
+                            <div className="flex justify-between text-sm">
+                                <span className="text-text-muted">Would Become:</span>
+                                <span className="text-red-400 font-bold">{creditWarning.totalAfter} Credits</span>
+                            </div>
+                            <div className="flex justify-between text-sm">
+                                <span className="text-text-muted">Your Max Limit:</span>
+                                <span className="text-primary font-bold">{maxCredits} Credits</span>
+                            </div>
+                        </div>
+                        <p className="text-text-muted text-xs mb-4 leading-relaxed">
+                            Adding <strong className="text-white">{creditWarning.workshopName}</strong> would put you at <strong className="text-red-400">{creditWarning.totalAfter}</strong> credits, exceeding your limit of <strong className="text-primary">{maxCredits}</strong> credits. Please drop another workshop first or contact your mentor to increase your credit limit.
+                        </p>
+                        <div className="flex justify-end">
+                            <button
+                                onClick={() => setCreditWarning(null)}
+                                className="px-6 py-2.5 rounded-lg bg-primary text-background-dark font-bold text-sm hover:bg-yellow-400 transition-colors"
+                            >
+                                Got it
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Drop Confirmation Modal */}
+            {dropId && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in">
+                    <div className="bg-surface-dark border border-border-dark p-6 rounded-xl shadow-2xl max-w-sm w-full mx-4 animate-in zoom-in-95">
+                        <div className="flex items-center gap-3 mb-4 text-red-500">
+                            <span className="material-symbols-outlined text-3xl">warning</span>
+                            <h3 className="text-xl font-bold text-white">Drop Workshop?</h3>
+                        </div>
+                        <p className="text-text-muted mb-6 leading-relaxed">
+                            Are you sure you want to remove this workshop from your schedule? <br />
+                            <span className="text-xs opacity-70 mt-2 block">If the workshop fills up, you might not be able to re-enroll.</span>
+                        </p>
+                        <div className="flex justify-end gap-3">
+                            <button
+                                onClick={() => setDropId(null)}
+                                className="px-4 py-2 rounded-lg text-text-muted hover:text-white transition-colors font-bold text-sm"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={confirmDrop}
+                                className="px-4 py-2 rounded-lg bg-red-500/10 border border-red-500/50 text-red-500 hover:bg-red-500 hover:text-white font-bold transition-colors text-sm flex items-center gap-2"
+                            >
+                                <span className="material-symbols-outlined text-lg">delete</span>
+                                Drop Workshop
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Session Expired Modal */}
+            {showSessionExpired && (
+                <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 backdrop-blur-sm animate-in fade-in">
+                    <div className="bg-surface-dark border border-red-500/50 p-6 rounded-xl shadow-2xl max-w-sm w-full mx-4 animate-in zoom-in-95">
+                        <div className="flex items-center gap-3 mb-4 text-red-500">
+                            <span className="material-symbols-outlined text-4xl">schedule</span>
+                            <h3 className="text-xl font-bold text-white">Session Expired</h3>
+                        </div>
+                        <p className="text-text-muted mb-6 leading-relaxed">
+                            Your selection time has ended. Please log in again to continue.
+                        </p>
+                        <div className="flex justify-end">
+                            <button
+                                onClick={handleSessionExpiredClose}
+                                className="px-6 py-3 rounded-lg bg-primary hover:bg-yellow-400 text-background-dark font-bold transition-colors flex items-center gap-2"
+                            >
+                                <span className="material-symbols-outlined">login</span>
+                                Go to Login
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Seat Selection Modal */}
+            {selectedWorkshopForSeat && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in overflow-y-auto">
+                    <div className="bg-surface-dark border border-border-dark p-6 rounded-xl shadow-2xl max-w-4xl w-full mx-4 my-8 animate-in zoom-in-95">
+                        <div className="flex items-center justify-between mb-6">
+                            <div>
+                                <h3 className="text-2xl font-bold text-white">{selectedWorkshopForSeat.name}</h3>
+                                <p className="text-text-muted text-sm">{selectedWorkshopForSeat.code}</p>
+                            </div>
+                            <button
+                                onClick={handleCancelSeatSelection}
+                                className="text-text-muted hover:text-white"
+                            >
+                                <span className="material-symbols-outlined text-3xl">close</span>
+                            </button>
+                        </div>
+
+                        {/* Only render SeatMap if we have a valid sessionId */}
+                        {(selectedWorkshopForSeat.sessionId || selectedWorkshopForSeat.classId) ? (
+                            <SeatMap
+                                workshopSessionId={selectedWorkshopForSeat.sessionId || selectedWorkshopForSeat.classId}
+                                onSeatSelected={handleSeatSelected}
+                            />
+                        ) : (
+                            <div className="text-center py-12 text-red-400">
+                                <span className="material-symbols-outlined text-6xl mb-4">error</span>
+                                <p>Invalid workshop session. Please close and try again.</p>
+                            </div>
+                        )}
+
+                        <div className="mt-6 flex justify-end gap-3">
+                            <button
+                                onClick={handleCancelSeatSelection}
+                                className="px-6 py-3 rounded-lg text-text-muted hover:text-white transition-colors font-bold"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={confirmEnrollmentWithSeat}
+                                disabled={!selectedSeat}
+                                className="px-6 py-3 rounded-lg bg-primary hover:bg-yellow-400 text-background-dark font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                            >
+                                <span className="material-symbols-outlined">check_circle</span>
+                                Confirm Enrollment
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            <div className="flex flex-1 overflow-hidden">
+                {/* Left Sidebar - Filters */}
+                <aside className="w-80 flex-shrink-0 bg-background-dark border-r border-border-dark p-6 flex flex-col gap-8 hidden lg:flex overflow-y-auto">
+                    {/* Search */}
+                    <div className="flex flex-col gap-2">
+                        <label className="text-sm font-medium text-text-muted uppercase tracking-wider">Search</label>
+                        <div className="flex w-full items-stretch rounded-lg bg-surface-dark border border-border-dark focus-within:border-primary transition-colors">
+                            <div className="flex items-center justify-center pl-3 text-text-muted">
+                                <span className="material-symbols-outlined">search</span>
+                            </div>
+                            <input
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                className="w-full bg-transparent border-none text-white focus:ring-0 placeholder:text-text-muted/50 py-3 text-sm"
+                                placeholder="Workshop name or code..."
+                            />
+                        </div>
+                    </div>
+
+                    {/* Workshop Type Filter */}
+                    <div className="flex flex-col gap-3">
+                        <div className="flex justify-between items-center">
+                            <label className="text-sm font-medium text-text-muted uppercase tracking-wider">Type</label>
+                            <span onClick={() => setSelectedWorkshopType('all')} className="text-xs text-primary cursor-pointer hover:underline">Clear</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                            {[{ name: 'Technical', color: 'blue' }, { name: 'Creative', color: 'purple' }, { name: 'Business', color: 'green' }, { name: 'Leadership', color: 'orange' }].map(type => (
+                                <button
+                                    key={type.name}
+                                    onClick={() => setSelectedWorkshopType(type.name)}
+                                    className={`px-2 py-2 rounded-lg border text-xs font-bold transition-all ${selectedWorkshopType === type.name
+                                        ? `border-${type.color}-500 text-${type.color}-400 bg-${type.color}-500/10`
+                                        : 'border-border-dark text-text-muted hover:border-primary/50'
+                                        }`}
+                                >
+                                    {type.name}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                </aside>
+
+                {/* Main Content */}
+                <main className="flex-1 p-6 lg:p-10 flex flex-col gap-8 overflow-y-auto custom-scrollbar">
+                    {/* Header */}
+                    <div className="flex flex-wrap justify-between items-end gap-4 border-b border-border-dark pb-6">
+                        <div className="flex flex-col gap-2">
+                            <div className=" flex items-center gap-2 text-primary text-sm font-bold tracking-wider uppercase">
+                                <span className="material-symbols-outlined text-[20px]">school</span>
+                                <span>Workshop Series 2024</span>
+                            </div>
+                            <h1 className="text-white text-3xl lg:text-4xl font-black leading-tight tracking-tight">
+                                Workshop Registration
+                            </h1>
+                            <p className="text-text-muted text-base">Select workshops for this session</p>
+                        </div>
+                        <div className="flex items-center gap-4 bg-surface-dark px-4 py-2 rounded-lg border border-border-dark">
+                            <div className="flex flex-col items-center px-2">
+                                <span className="text-[10px] uppercase text-text-muted font-bold tracking-widest">Time Remaining</span>
+                                <span className={`font-mono font-bold text-xl ${timeLeft < 60 ? 'text-red-500 animate-pulse' : 'text-primary'}`}>
+                                    {formatTime(timeLeft)}
+                                </span>
+                            </div>
+                            <div className="h-8 w-px bg-border-dark"></div>
+                            <div className="flex flex-col items-end">
+                                <span className="text-[10px] uppercase text-text-muted font-bold tracking-widest">Selected</span>
+                                <span className="text-primary font-bold text-lg">{totalCredits} Credits</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Workshop Grid */}
+                    <div className="grid grid-cols-1 xl:grid-cols-2 2xl:grid-cols-3 gap-6 mb-24">
+                        {filteredWorkshops.map(workshop => (
+                            <WorkshopCard
+                                key={workshop.sessionId || workshop.classId}
+                                workshop={workshop}
+                                onAdd={() => handleAddWorkshop(workshop.sessionId || workshop.classId, workshop.seatsEnabled)}
+                                onDrop={() => handleDropWorkshop(workshop.enrollmentId, workshop)}
+                            />
+                        ))}
+                    </div>
+
+                    {filteredWorkshops.length === 0 && (
+                        <div className="text-center py-12 text-text-muted">
+                            <span className="material-symbols-outlined text-6xl mb-4">search_off</span>
+                            <p>No workshops found matching your criteria.</p>
+                        </div>
+                    )}
+                </main>
+
+                {/* Right Sidebar - Workshop Preview */}
+                <aside className="fixed lg:relative right-0 top-[65px] lg:top-0 h-[calc(100vh-65px)] w-80 bg-surface-dark border-l border-border-dark flex flex-col shadow-2xl z-40">
+                    <div className="p-6 border-b border-border-dark flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                            <span className="material-symbols-outlined text-primary">assignment_turned_in</span>
+                            <h3 className="text-lg font-bold text-white">My Workshops</h3>
+                        </div>
+                        <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded font-bold">{myWorkshops.length} Workshops</span>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3 custom-scrollbar">
+                        {myWorkshops.map(workshop => (
+                            <div key={workshop.id} className="p-3 rounded-lg bg-background-dark border border-border-dark group hover:border-primary/50 transition-colors">
+                                <div className="flex justify-between items-start mb-1">
+                                    <span className="text-[10px] font-bold text-primary uppercase">{workshop.workshopCode || workshop.courseCode}</span>
+                                    <span className="text-[10px] font-bold text-text-muted">{workshop.credits} Credits</span>
+                                </div>
+                                <h4 className="text-sm font-semibold text-white mb-2 line-clamp-1">{workshop.workshopName || workshop.courseName}</h4>
+                                {workshop.seatNumber && (
+                                    <div className="text-[10px] text-primary mb-2">Seat: {workshop.seatNumber}</div>
+                                )}
+                                <button
+                                    onClick={() => handleDropWorkshop(workshop.id, workshop)}
+                                    className="text-[10px] text-red-400 hover:text-red-300 flex items-center gap-1 uppercase tracking-wider font-bold"
+                                >
+                                    <span className="material-symbols-outlined text-xs">close</span> Remove
+                                </button>
+                            </div>
+                        ))}
+
+                        {myWorkshops.length === 0 && (
+                            <div className="border-2 border-dashed border-border-dark rounded-lg p-4 flex flex-col items-center justify-center text-text-muted opacity-40">
+                                <span className="material-symbols-outlined mb-1">add</span>
+                                <span className="text-[10px] uppercase font-bold">Add workshops</span>
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="p-6 bg-background-dark/50 border-t border-border-dark mt-auto">
+                        <div className="flex justify-between items-center mb-6">
+                            <div>
+                                <p className="text-[10px] uppercase text-text-muted font-bold tracking-widest">Total Credits</p>
+                                <p className="text-2xl font-black text-white">{totalCredits} <span className="text-xs font-medium text-text-muted">/ {maxCredits}</span></p>
+                            </div>
+                        </div>
+                        <button
+                            onClick={handleFinish}
+                            disabled={myWorkshops.length === 0}
+                            className="w-full bg-cream-gold hover:bg-[#EBC44F] text-background-dark font-black py-4 rounded-lg flex items-center justify-center gap-2 shadow-lg shadow-cream-gold/10 transition-all active:scale-[0.98] disabled:opacity-50"
+                        >
+                            <span className="material-symbols-outlined font-bold">description</span>
+                            DETAIL MY WORKSHOP
+                        </button>
+                        <p className="text-[10px] text-center text-text-muted/60 mt-4 leading-relaxed">
+                            By submitting, you agree to the workshop terms and schedules.
+                        </p>
+                    </div>
+                </aside>
+            </div>
+
+            {/* Mobile Bottom Bar */}
+            <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-surface-dark border-t border-border-dark p-4 flex items-center justify-between z-50">
+                <div className="flex flex-col">
+                    <span className="text-[10px] uppercase text-text-muted font-bold">Selected</span>
+                    <span className="text-primary font-bold">{totalCredits} Credits ({myWorkshops.length} Workshops)</span>
+                </div>
+                <button
+                    onClick={handleFinish}
+                    disabled={myWorkshops.length === 0}
+                    className="bg-cream-gold text-background-dark px-6 py-2 rounded-lg font-bold text-sm disabled:opacity-50"
+                >
+                    Detail My Workshop
+                </button>
+            </div>
+        </div>
+    )
+}
+
+function WorkshopCard({ workshop, onAdd, onDrop }) {
+    const isFull = workshop.enrolled >= workshop.quota
+    const isEnrolled = workshop.isEnrolled
+
+    // Registration Status Logic
+    const now = new Date()
+    const regStart = workshop.registrationStart ? new Date(workshop.registrationStart) : null
+    const regEnd = workshop.registrationEnd ? new Date(workshop.registrationEnd) : null
+
+    let regStatus = 'OPEN'
+    let regStatusLabel = 'Registration Open'
+    let regColorClass = 'text-green-400'
+
+    if (regStart && now < regStart) {
+        regStatus = 'UPCOMING'
+        regStatusLabel = 'Registration Upcoming'
+        regColorClass = 'text-blue-400'
+    } else if (regEnd && now > regEnd) {
+        regStatus = 'CLOSED'
+        regStatusLabel = 'Registration Closed'
+        regColorClass = 'text-red-400'
+    }
+
+    const canRegister = regStatus === 'OPEN'
+
+    return (
+        <div className={`group relative flex flex-col rounded-xl border p-0 transition-all duration-300 ${isEnrolled
+            ? 'border-2 border-primary bg-surface-dark shadow-[0_0_20px_rgba(231,185,35,0.15)]'
+            : isFull || !canRegister
+                ? 'border-border-dark bg-surface-dark/50 opacity-80'
+                : 'border-border-dark bg-surface-dark hover:border-primary hover:shadow-[0_0_20px_rgba(231,185,35,0.1)]'
+            }`}>
+            {isEnrolled && (
+                <div className="absolute -top-3 -right-3 bg-primary text-background-dark rounded-full p-1 shadow-md z-10">
+                    <span className="material-symbols-outlined text-[20px] font-bold">check</span>
+                </div>
+            )}
+
+            <div className="p-6 flex flex-col gap-4 h-full">
+                <div className="flex justify-between items-start">
+                    <div>
+                        {workshop.workshopType && (
+                            <span className={`inline-block px-2 py-0.5 rounded text-[9px] font-bold mb-1 mr-2 ${workshop.workshopType === 'Technical' ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' :
+                                workshop.workshopType === 'Creative' ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30' :
+                                    workshop.workshopType === 'Business' ? 'bg-green-500/20 text-green-400 border border-green-500/30' :
+                                        workshop.workshopType === 'Leadership' ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30' :
+                                            'bg-gray-500/20 text-gray-400 border border-gray-500/30'
+                                }`}>
+                                {workshop.workshopType}
+                            </span>
+                        )}
+                        <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold mb-2 ${isEnrolled ? 'bg-primary/20 text-primary' : 'bg-white/10 text-white'
+                            }`}>
+                            {workshop.code}
+                        </span>
+                        <h3 className={`text-xl font-bold leading-tight ${isEnrolled ? 'text-primary' : 'text-white group-hover:text-primary'
+                            } transition-colors`}>
+                            {workshop.name}
+                        </h3>
+                    </div>
+                </div>
+
+                <div className="flex flex-col gap-2 mt-1">
+                    <div className={`flex items-center gap-3 text-sm ${isEnrolled ? 'text-white' : 'text-text-muted'}`}>
+                        <span className={`material-symbols-outlined text-[18px] ${isEnrolled ? 'text-primary' : ''}`}>schedule</span>
+                        <span>{workshop.schedule || 'TBD'}</span>
+                    </div>
+                    {workshop.room && (
+                        <div className={`flex items-center gap-3 text-sm ${isEnrolled ? 'text-white' : 'text-text-muted'}`}>
+                            <span className={`material-symbols-outlined text-[18px] ${isEnrolled ? 'text-primary' : ''}`}>location_on</span>
+                            <span>{workshop.room}</span>
+                        </div>
+                    )}
+                    {workshop.seatsEnabled && (
+                        <div className={`flex items-center gap-3 text-sm ${isEnrolled ? 'text-white' : 'text-text-muted'}`}>
+                            <span className={`material-symbols-outlined text-[18px] ${isEnrolled ? 'text-primary' : ''}`}>event_seat</span>
+                            <span>Seat selection required</span>
+                        </div>
+                    )}
+                    <div className={`flex items-center gap-3 text-sm ${isEnrolled ? 'text-white' : 'text-text-muted'}`}>
+                        <span className={`material-symbols-outlined text-[18px] ${isEnrolled ? 'text-primary' : ''}`}>verified</span>
+                        <span>{workshop.credits} Credits</span>
+                    </div>
+
+                    {/* Registration Status */}
+                    <div className={`flex items-center gap-3 text-sm ${regColorClass}`}>
+                        <span className="material-symbols-outlined text-[18px]">event_available</span>
+                        <span>{regStatusLabel}</span>
+                    </div>
+                    {regStart && regEnd && (
+                        <div className="text-[10px] text-text-muted ml-7">
+                            {regStart.toLocaleDateString()} {regStart.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - {regEnd.toLocaleDateString()} {regEnd.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </div>
+                    )}
+
+                </div>
+
+                <div className={`mt-auto pt-5 flex items-center justify-between border-t transition-colors ${isEnrolled ? 'border-border-dark' : 'border-border-dark group-hover:border-primary/20'
+                    }`}>
+                    <div className="flex flex-col">
+                        <span className="text-[10px] uppercase text-text-muted font-bold">Quota</span>
+                        <span className={`text-sm font-bold ${isFull ? 'text-red-400' : 'text-green-400'}`}>
+                            {workshop.enrolled}<span className="text-text-muted font-normal">/{workshop.quota}</span>
+                        </span>
+                    </div>
+
+                    {isEnrolled ? (
+                        <button
+                            onClick={onDrop}
+                            className="flex items-center gap-2 rounded-lg bg-red-500/10 border border-red-500/50 px-5 py-2 text-sm font-bold text-red-500 hover:bg-red-500 hover:text-white transition-colors"
+                        >
+                            <span className="material-symbols-outlined text-[18px]">remove_circle</span>
+                            Drop
+                        </button>
+                    ) : isFull ? (
+                        <button
+                            disabled
+                            className="flex items-center gap-2 rounded-lg bg-white/5 px-5 py-2 text-sm font-bold text-text-muted cursor-not-allowed"
+                        >
+                            <span className="material-symbols-outlined text-[18px]">block</span>
+                            Full
+                        </button>
+                    ) : !canRegister ? (
+                        <button
+                            disabled
+                            className="flex items-center gap-2 rounded-lg bg-white/5 px-5 py-2 text-sm font-bold text-text-muted cursor-not-allowed"
+                        >
+                            <span className="material-symbols-outlined text-[18px]">lock</span>
+                            Closed
+                        </button>
+                    ) : (
+                        <button
+                            onClick={onAdd}
+                            className="flex items-center gap-2 rounded-lg bg-primary px-5 py-2 text-sm font-bold text-background-dark hover:bg-yellow-400 transition-colors"
+                        >
+                            <span className="material-symbols-outlined text-[18px]">add_circle</span>
+                            {workshop.seatsEnabled ? 'Select Seat' : 'Add'}
+                        </button>
+                    )}
+                </div>
+            </div>
+        </div>
+    )
+}

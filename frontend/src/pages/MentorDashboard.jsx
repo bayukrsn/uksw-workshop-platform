@@ -1,0 +1,1102 @@
+import { useState, useEffect, useMemo } from 'react'
+import { useAuth } from '../context/AuthContext'
+import { api } from '../api/client'
+import { useToast } from '../components/Toast'
+import LoadingSpinner from '../components/LoadingSpinner'
+import SeatMap from '../components/SeatMap'
+import { UserManagement } from '../components/UserManagement'
+
+export default function MentorDashboard() {
+    const { user, logout } = useAuth()
+    const [workshops, setWorkshops] = useState([])
+    const [isLoading, setIsLoading] = useState(true)
+    const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
+    const [isEditModalOpen, setIsEditModalOpen] = useState(false)
+    const [editingWorkshop, setEditingWorkshop] = useState(null)
+    const [monitoringSessionId, setMonitoringSessionId] = useState(null)
+    const [activeTab, setActiveTab] = useState('workshops') // 'workshops' | 'schedule' | 'traffic' | 'students'
+    const [expandedWorkshopId, setExpandedWorkshopId] = useState(null)
+
+    useEffect(() => {
+        loadWorkshops()
+    }, [])
+
+    const loadWorkshops = async () => {
+        try {
+            const response = await api.getMentorWorkshops()
+            setWorkshops((response.courses || response.workshops || []).map(c => ({
+                ...c,
+                id: c.sessionId || c.classId || c.workshopId || c.id,
+                workshopType: c.workshopType || 'General',
+                type: c.workshopType || 'General' // Default to General
+            })))
+        } catch (err) {
+            console.error('Failed to load workshops:', err)
+        } finally {
+            setIsLoading(false)
+        }
+    }
+
+    const handleNavigateToWorkshop = (workshopId) => {
+        setExpandedWorkshopId(workshopId)
+        setActiveTab('workshops')
+    }
+
+    if (isLoading) {
+        return (
+            <div className="bg-background-dark min-h-screen flex items-center justify-center">
+                <LoadingSpinner size="lg" text="Loading dashboard..." />
+            </div>
+        )
+    }
+
+    return (
+        <div className="relative flex h-screen w-full bg-background-light dark:bg-background-dark overflow-hidden font-display">
+            {/* Sidebar */}
+            <aside className="hidden md:flex w-64 flex-col border-r border-border-dark bg-[#181611]">
+                <div className="flex h-full flex-col justify-between p-4">
+                    <div className="flex flex-col gap-4">
+                        <div className="flex gap-3 items-center pb-4 border-b border-border-dark">
+                            <div className="bg-center bg-no-repeat aspect-square bg-cover rounded-full size-10 border border-border-dark bg-primary/20 flex items-center justify-center text-primary font-bold">
+                                M
+                            </div>
+                            <div className="flex flex-col">
+                                <h1 className="text-white text-base font-bold leading-normal tracking-tight">Workshop</h1>
+                                <p className="text-text-muted text-xs font-normal leading-normal">Mentor Platform</p>
+                            </div>
+                        </div>
+                        <div className="flex flex-col gap-2">
+                            <button
+                                onClick={() => setActiveTab('workshops')}
+                                className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors group cursor-pointer w-full text-left ${activeTab === 'workshops' ? 'bg-primary/20 border border-primary/10' : 'hover:bg-accent-dark'}`}
+                            >
+                                <span className={`material-symbols-outlined ${activeTab === 'workshops' ? 'text-primary' : 'text-text-muted group-hover:text-white'}`}>menu_book</span>
+                                <p className={`text-sm font-medium leading-normal ${activeTab === 'workshops' ? 'text-white' : 'text-text-muted group-hover:text-white'}`}>My Workshops</p>
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('schedule')}
+                                className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors group cursor-pointer w-full text-left ${activeTab === 'schedule' ? 'bg-primary/20 border border-primary/10' : 'hover:bg-accent-dark'}`}
+                            >
+                                <span className={`material-symbols-outlined ${activeTab === 'schedule' ? 'text-primary' : 'text-text-muted group-hover:text-white'}`}>calendar_month</span>
+                                <p className={`text-sm font-medium leading-normal ${activeTab === 'schedule' ? 'text-white' : 'text-text-muted group-hover:text-white'}`}>Schedule</p>
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('traffic')}
+                                className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors group cursor-pointer w-full text-left ${activeTab === 'traffic' ? 'bg-primary/20 border border-primary/10' : 'hover:bg-accent-dark'}`}
+                            >
+                                <span className={`material-symbols-outlined ${activeTab === 'traffic' ? 'text-primary' : 'text-text-muted group-hover:text-white'}`}>traffic</span>
+                                <p className={`text-sm font-medium leading-normal ${activeTab === 'traffic' ? 'text-white' : 'text-text-muted group-hover:text-white'}`}>Traffic Control</p>
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('students')}
+                                className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors group cursor-pointer w-full text-left ${activeTab === 'students' ? 'bg-primary/20 border border-primary/10' : 'hover:bg-accent-dark'}`}
+                            >
+                                <span className={`material-symbols-outlined ${activeTab === 'students' ? 'text-primary' : 'text-text-muted group-hover:text-white'}`}>people</span>
+                                <p className={`text-sm font-medium leading-normal ${activeTab === 'students' ? 'text-white' : 'text-text-muted group-hover:text-white'}`}>Users</p>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+
+            {/* Main Content */}
+            <div className="flex flex-1 flex-col h-full overflow-hidden relative">
+                <header className="flex items-center justify-between whitespace-nowrap border-b border-solid border-border-dark bg-[#181611] px-6 py-3 z-10">
+                    <div className="flex items-center gap-4 lg:hidden">
+                        <span className="material-symbols-outlined text-white">menu</span>
+                    </div>
+
+                    <div className="flex flex-1 justify-end gap-3 items-center">
+                        <div className="flex items-center gap-3 pl-4 border-l border-border-dark">
+                            <div className="text-right hidden sm:block">
+                                <p className="text-white text-sm font-bold">{user?.name}</p>
+                                <p className="text-text-muted text-xs">Mentor</p>
+                            </div>
+                            <div className="bg-center bg-no-repeat aspect-square bg-cover rounded-full size-10 border border-border-dark bg-primary/10 flex items-center justify-center text-primary font-bold">
+                                {user?.name?.charAt(0) || 'M'}
+                            </div>
+                        </div>
+                        <button onClick={logout} className="flex items-center gap-2 pl-4 border-l border-border-dark hover:text-primary transition-colors text-text-muted group cursor-pointer">
+                            <span className="text-xs font-bold uppercase tracking-wider hidden md:block group-hover:text-primary">Sign Out</span>
+                            <span className="material-symbols-outlined text-[20px]">logout</span>
+                        </button>
+                    </div>
+                </header>
+
+                <main className="flex-1 overflow-y-auto bg-[#181611] custom-scrollbar">
+                    {activeTab === 'workshops' ? (
+                        <div className="p-6 lg:p-10 mx-auto max-w-4xl flex flex-col gap-8">
+                            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                                <div>
+                                    <h1 className="text-white tracking-tight text-[32px] font-bold leading-tight">My Workshops</h1>
+                                    <p className="text-text-muted text-base font-normal leading-normal mt-1">
+                                        Manage your active sessions and view seat maps.
+                                    </p>
+                                </div>
+                                <button
+                                    onClick={() => setIsCreateModalOpen(true)}
+                                    className="flex items-center justify-center h-12 px-6 rounded-lg bg-primary text-background-dark text-base font-bold hover:bg-primary-hover transition-colors gap-2 shadow-lg shadow-primary/20"
+                                >
+                                    <span className="material-symbols-outlined text-[20px]">add_circle</span>
+                                    Create Workshop
+                                </button>
+                            </div>
+
+                            <div className="flex flex-col gap-6">
+                                <h2 className="text-text-muted text-sm font-bold uppercase tracking-widest">
+                                    Active Sessions ({workshops.length})
+                                </h2>
+                                <div className="flex flex-col gap-4">
+                                    {workshops.map(workshop => (
+                                        <WorkshopAccordionItem
+                                            key={workshop.id}
+                                            workshop={workshop}
+                                            defaultOpen={expandedWorkshopId === workshop.id}
+                                            onUpdate={loadWorkshops}
+                                            onMonitorSeats={(sessionId) => setMonitoringSessionId(sessionId)}
+                                            onEdit={(workshop) => {
+                                                setEditingWorkshop(workshop)
+                                                setIsEditModalOpen(true)
+                                            }}
+                                        />
+                                    ))}
+                                    {workshops.length === 0 && (
+                                        <div className="text-center py-12 text-text-muted">
+                                            No active workshops found.
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    ) : activeTab === 'schedule' ? (
+                        <MentorSchedule workshops={workshops} onNavigateToWorkshop={handleNavigateToWorkshop} />
+                    ) : activeTab === 'students' ? (
+                        <UserManagement />
+                    ) : (
+                        <TrafficControl />
+                    )}
+                </main>
+            </div>
+
+            {isCreateModalOpen && (
+                <CreateWorkshopModal onClose={() => setIsCreateModalOpen(false)} />
+            )}
+
+            {/* Edit Workshop Modal */}
+            {isEditModalOpen && editingWorkshop && (
+                <EditWorkshopModal
+                    workshop={editingWorkshop}
+                    onClose={() => {
+                        setIsEditModalOpen(false)
+                        setEditingWorkshop(null)
+                    }}
+                />
+            )}
+
+            {/* Seat Monitoring Modal */}
+            {monitoringSessionId && (
+                <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/90 backdrop-blur-md animate-in fade-in">
+                    <div className="relative w-full max-w-5xl h-[90vh] bg-surface-dark border border-border-dark rounded-xl shadow-2xl overflow-hidden flex flex-col m-4">
+                        <div className="p-4 border-b border-border-dark flex justify-between items-center bg-[#1d1b14]">
+                            <div>
+                                <h3 className="text-white font-bold text-lg">Live Seat Monitor</h3>
+                                <p className="text-text-muted text-xs">Real-time view of seat occupancy</p>
+                            </div>
+                            <button
+                                onClick={() => setMonitoringSessionId(null)}
+                                className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-white/10 text-text-muted hover:text-white transition-colors"
+                            >
+                                <span className="material-symbols-outlined">close</span>
+                            </button>
+                        </div>
+                        <div className="flex-1 overflow-auto p-8 custom-scrollbar bg-[#181611]">
+                            <SeatMap workshopSessionId={monitoringSessionId} readOnly={true} />
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    )
+}
+
+function MentorSchedule({ workshops, onNavigateToWorkshop }) {
+    const [selectedBlock, setSelectedBlock] = useState(null)
+    // Track the currently viewed date (default effectively to today)
+    const [viewDate, setViewDate] = useState(new Date())
+
+    // Get dates for the full week (Mon-Fri) containing the viewDate
+    const getWeekDates = useMemo(() => {
+        const current = new Date(viewDate);
+        const day = current.getDay(); // 0-6
+        // Calculate offset to Monday (assuming Mon is start, 0=Sun, 1=Mon)
+        // If Sun(0), offset -6. If Mon(1), offset 0. If Tue(2), offset -1.
+        const diff = current.getDate() - day + (day === 0 ? -6 : 1);
+
+        const monday = new Date(current.setDate(diff));
+
+        return [0, 1, 2, 3, 4].map(i => {
+            const d = new Date(monday)
+            d.setDate(monday.getDate() + i)
+            return d
+        })
+    }, [viewDate])
+
+    const scheduleBlocks = useMemo(() => {
+        const blocks = []
+        const weekDates = getWeekDates;
+
+        workshops.forEach(w => {
+            if (w.date) {
+                const wDate = new Date(w.date);
+                // Find if this workshop falls on one of the visible days
+                const foundDayIndex = weekDates.findIndex(d =>
+                    d.getDate() === wDate.getDate() &&
+                    d.getMonth() === wDate.getMonth() &&
+                    d.getFullYear() === wDate.getFullYear()
+                );
+
+                if (foundDayIndex !== -1 && w.schedule) {
+                    // Extract time. Assuming standard format or trying to parse start/end from schedule string
+                    const parts = w.schedule.split(', ');
+                    parts.forEach(part => {
+                        const timePart = part.match(/(\d{2}:\d{2})-(\d{2}:\d{2})/);
+                        if (timePart) {
+                            blocks.push({
+                                ...w,
+                                dayIndex: foundDayIndex,
+                                start: timePart[1],
+                                end: timePart[2]
+                            });
+                        }
+                    });
+                }
+            }
+        })
+        return blocks
+    }, [workshops, getWeekDates])
+
+    const getGridStyle = (block) => {
+        const colStart = block.dayIndex + 2;
+        const startHour = parseInt(block.start.split(':')[0])
+        const endHour = parseInt(block.end.split(':')[0])
+        // Grid starts at 7:00 (index 0 for header row?)
+        // Row 1 is header (days)
+        // Row 2 is 7:00
+        // formula: (hour - 7) + 2 might be correct if grid rows are 1-based and row 1 is header.
+        const rowStart = (startHour - 7) + 2
+        const rowSpan = endHour - startHour
+        return { gridColumnStart: colStart, gridRowStart: rowStart, gridRowEnd: `span ${rowSpan}` }
+    }
+
+    const prevWeek = () => {
+        const newDate = new Date(viewDate);
+        newDate.setDate(viewDate.getDate() - 7);
+        setViewDate(newDate);
+    }
+    const nextWeek = () => {
+        const newDate = new Date(viewDate);
+        newDate.setDate(viewDate.getDate() + 7);
+        setViewDate(newDate);
+    }
+
+    const jumpToToday = () => {
+        setViewDate(new Date());
+    }
+
+    const monthYearLabel = useMemo(() => {
+        // Formats: "February 2026" or "Jan - Feb 2026" if crossing months
+        const first = getWeekDates[0];
+        const last = getWeekDates[4];
+        if (first.getMonth() === last.getMonth()) {
+            return first.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+        } else {
+            return `${first.toLocaleDateString('en-US', { month: 'short' })} - ${last.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}`
+        }
+    }, [getWeekDates]);
+
+    return (
+        <div className="p-6 h-full flex flex-col">
+            <div className="flex flex-col gap-6 h-full">
+                <div className="flex items-center justify-between">
+                    <h1 className="text-white text-2xl font-bold">Workshop Schedule</h1>
+                    <div className="flex items-center gap-4">
+                        <button onClick={jumpToToday} className="px-4 py-1.5 rounded-md bg-surface-dark border border-border-dark text-white text-sm font-bold hover:bg-border-dark transition-colors">
+                            Today
+                        </button>
+                        <div className="flex items-center gap-1 bg-surface-dark rounded-md border border-border-dark p-0.5">
+                            <button onClick={prevWeek} className="w-8 h-8 rounded flex items-center justify-center text-text-muted hover:text-white hover:bg-border-dark transition-colors">
+                                <span className="material-symbols-outlined text-[20px]">chevron_left</span>
+                            </button>
+                            <button onClick={nextWeek} className="w-8 h-8 rounded flex items-center justify-center text-text-muted hover:text-white hover:bg-border-dark transition-colors">
+                                <span className="material-symbols-outlined text-[20px]">chevron_right</span>
+                            </button>
+                        </div>
+                        <span className="text-white font-bold text-lg min-w-[200px] text-right">{monthYearLabel}</span>
+                    </div>
+                </div>
+
+                <div className="flex-1 bg-[#1d1b14] border border-border-dark rounded-xl overflow-hidden shadow-2xl relative flex flex-col">
+                    {/* Header Row */}
+                    <div className="grid grid-cols-[60px_repeat(5,1fr)] border-b border-border-dark bg-[#1d1b14]">
+                        <div className="h-[50px] border-r border-border-dark"></div>
+                        {getWeekDates.map((date, i) => {
+                            const isToday = date.toDateString() === new Date().toDateString();
+                            return (
+                                <div key={i} className={`flex flex-col items-center justify-center h-[50px] ${i < 4 ? 'border-r border-border-dark' : ''} ${isToday ? 'bg-primary/5' : ''}`}>
+                                    <div className="flex items-baseline gap-1.5">
+                                        <span className={`text-xs font-medium uppercase ${isToday ? 'text-primary' : 'text-text-muted'}`}>
+                                            {date.toLocaleDateString('en-US', { weekday: 'short' })}
+                                        </span>
+                                        <span className={`text-lg font-bold ${isToday ? 'bg-primary text-background-dark w-7 h-7 flex items-center justify-center rounded-full' : 'text-white'}`}>
+                                            {date.getDate()}
+                                        </span>
+                                    </div>
+                                </div>
+                            )
+                        })}
+                    </div>
+
+                    {/* Calendar Body - Scrollable */}
+                    <div className="flex-1 overflow-y-auto custom-scrollbar relative">
+                        <div className="grid grid-cols-[60px_repeat(5,1fr)] grid-rows-[repeat(13,60px)] min-h-[780px]">
+                            {/* Time Labels Column */}
+                            <div className="row-span-full border-r border-border-dark bg-[#1d1b14] sticky left-0 z-10">
+                                {Array.from({ length: 13 }).map((_, i) => (
+                                    <div key={i} className="h-[60px] border-b border-border-dark/50 text-xs text-text-muted flex items-start justify-end pr-2 pt-1 relative">
+                                        <span className="-translate-y-1/2">{i + 7}:00</span>
+                                    </div>
+                                ))}
+                            </div>
+
+                            {/* Grid Cells Background */}
+                            {Array.from({ length: 5 }).map((_, colIndex) => (
+                                <div key={colIndex} className={`row-span-full border-r border-border-dark/30 relative ${colIndex === 4 ? 'border-r-0' : ''}`}>
+                                    {Array.from({ length: 13 }).map((_, rowIndex) => (
+                                        <div key={rowIndex} className="h-[60px] border-b border-border-dark/30"></div>
+                                    ))}
+                                    {/* Today Highlight Column */}
+                                    {getWeekDates[colIndex].toDateString() === new Date().toDateString() && (
+                                        <div className="absolute inset-0 bg-primary/5 pointer-events-none"></div>
+                                    )}
+                                </div>
+                            ))}
+
+                            {/* Floating Events Layer */}
+                            <div className="absolute inset-0 ml-[60px] grid grid-cols-5 grid-rows-[repeat(13,60px)] pointer-events-none">
+                                {scheduleBlocks.map((block, idx) => (
+                                    <div key={idx} className="pointer-events-auto relative mx-1 z-10" style={{
+                                        gridColumnStart: block.dayIndex + 1,
+                                        gridRowStart: (parseInt(block.start.split(':')[0]) - 7) + 1,
+                                        gridRowEnd: `span ${parseInt(block.end.split(':')[0]) - parseInt(block.start.split(':')[0])}`,
+                                        marginTop: '1px'
+                                    }} onClick={() => setSelectedBlock(block)}>
+                                        <div className="h-full w-full bg-primary/90 border-l-4 border-white/50 rounded-sm p-2 text-background-dark hover:opacity-90 hover:scale-[1.01] transition-all cursor-pointer overflow-hidden flex flex-col shadow-md">
+                                            <span className="font-bold text-xs leading-tight">{block.name}</span>
+                                            <div className="flex items-center gap-1 mt-1 opacity-80">
+                                                <span className="material-symbols-outlined">location_on</span>
+                                                <span className="text-[10px] truncate">{block.room || 'TBD'}</span>
+                                            </div>
+                                            <div className="flex items-center gap-1 mt-auto opacity-80">
+                                                <span className="material-symbols-outlined">schedule</span>
+                                                <span className="text-[10px]">{block.start} - {block.end}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+
+                            {/* Current Time Indicator Line (if today) */}
+                            {getWeekDates.some(d => d.toDateString() === new Date().toDateString()) && (
+                                <div
+                                    className="absolute left-[60px] right-0 border-t-2 border-red-500 z-20 pointer-events-none flex items-center"
+                                    style={{
+                                        top: `${((new Date().getHours() - 7) * 60 + new Date().getMinutes())}px`
+                                    }}
+                                >
+                                    <div className="w-2 h-2 rounded-full bg-red-500 -ml-1"></div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {selectedBlock && (
+                <div className="fixed overflow-hidden z-50 inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in">
+                    <div className="bg-surface-dark border border-primary/40 p-6 rounded-xl shadow-2xl max-w-sm w-full mx-4 relative">
+                        <button onClick={() => setSelectedBlock(null)} className="absolute top-4 right-4 text-text-muted hover:text-white">
+                            <span className="material-symbols-outlined">close</span>
+                        </button>
+                        <h3 className="text-xl font-bold text-white mb-1">{selectedBlock.name}</h3>
+                        <p className="text-primary text-sm font-bold mb-4">{selectedBlock.code}</p>
+
+                        <div className="space-y-3 mb-6">
+                            <div className="flex items-center gap-3 text-text-muted">
+                                <span className="material-symbols-outlined">calendar_today</span>
+                                <span>{new Date(selectedBlock.date).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</span>
+                            </div>
+                            <div className="flex items-center gap-3 text-text-muted">
+                                <span className="material-symbols-outlined">schedule</span>
+                                <span>{selectedBlock.start} - {selectedBlock.end}</span>
+                            </div>
+                            <div className="flex items-center gap-3 text-text-muted">
+                                <span className="material-symbols-outlined">location_on</span>
+                                <span>{selectedBlock.room || 'Room TBD'}</span>
+                            </div>
+                            <div className="flex items-center gap-3 text-text-muted">
+                                <span className="material-symbols-outlined">group</span>
+                                <span>{selectedBlock.enrolled} / {selectedBlock.quota} Students</span>
+                            </div>
+                        </div>
+
+                        <button onClick={() => onNavigateToWorkshop(selectedBlock.id)} className="w-full py-2.5 bg-primary text-background-dark font-bold rounded-lg hover:bg-yellow-400 transition-colors flex items-center justify-center gap-2">
+                            View Details
+                        </button>
+                    </div>
+                </div>
+            )}
+        </div>
+    )
+}
+
+function CreateWorkshopModal({ onClose }) {
+    // ... (Similar to CreateCourseModal but with workshop terminology if needed)
+    // For brevity, using same logic but renamed
+    const now = new Date()
+    const { addToast } = useToast()
+    const [formData, setFormData] = useState({
+        name: '',
+        code: '',
+        credits: 2,
+        quota: 40,
+        workshopType: 'Technical',
+        workshopType: 'Technical',
+        date: now.toISOString().split('T')[0], // YYYY-MM-DD
+        registrationStart: now.toISOString().slice(0, 16), // YYYY-MM-DDTHH:mm
+        registrationEnd: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16), // +7 days
+        timeStart: '08:00',
+        timeEnd: '10:00',
+        seatsEnabled: true,
+        rows: 5,
+        cols: 8
+    })
+
+    const handleSubmit = async (e) => {
+        e.preventDefault()
+        try {
+            await api.createWorkshopSession(formData)
+            onClose()
+            addToast('Workshop created successfully!', 'success')
+            window.location.reload()
+        } catch (err) {
+            console.error(err)
+            addToast(err.message || 'Failed to create workshop', 'error')
+        }
+    }
+
+    return (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in">
+            <div className="bg-surface-dark border border-border-dark w-full max-w-lg rounded-xl shadow-2xl m-4 animate-in zoom-in-95">
+                <div className="flex items-center justify-between p-6 border-b border-border-dark">
+                    <h3 className="text-xl font-bold text-white">Create New Workshop</h3>
+                    <button onClick={onClose} className="text-text-muted hover:text-white"><span className="material-symbols-outlined">close</span></button>
+                </div>
+                <form onSubmit={handleSubmit} className="p-6 flex flex-col gap-4 max-h-[70vh] overflow-y-auto custom-scrollbar">
+                    <div className="flex flex-col gap-1">
+                        <label className="text-xs font-bold text-text-muted uppercase">Workshop Name</label>
+                        <input required value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} placeholder="e.g. Advanced AI Programming" className="w-full bg-background-dark border border-border-dark rounded h-11 px-3 text-white focus:border-primary focus:outline-none" />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="flex flex-col gap-1">
+                            <label className="text-xs font-bold text-text-muted uppercase">Type</label>
+                            <select value={formData.workshopType} onChange={e => setFormData({ ...formData, workshopType: e.target.value })} className="w-full bg-background-dark border border-border-dark rounded h-11 px-3 text-white focus:border-primary focus:outline-none">
+                                <option value="Technical">Technical</option>
+                                <option value="Creative">Creative</option>
+                                <option value="Business">Business</option>
+                                <option value="Leadership">Leadership</option>
+                                <option value="General">General</option>
+                            </select>
+                        </div>
+                        <div className="flex flex-col gap-1">
+                            <label className="text-xs font-bold text-text-muted uppercase">Credits</label>
+                            <input type="number" required value={formData.credits} onChange={e => setFormData({ ...formData, credits: parseInt(e.target.value) })} className="w-full bg-background-dark border border-border-dark rounded h-11 px-3 text-white focus:border-primary focus:outline-none" />
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="flex flex-col gap-1">
+                            <label className="text-xs font-bold text-text-muted uppercase">Code</label>
+                            <input value="Auto-generated" disabled className="w-full bg-background-dark/50 border border-border-dark rounded h-11 px-3 text-text-muted italic cursor-not-allowed" />
+                        </div>
+                        <div className="flex flex-col gap-1">
+                            <label className="text-xs font-bold text-text-muted uppercase">Quota</label>
+                            <input type="number" required value={formData.quota} onChange={e => setFormData({ ...formData, quota: parseInt(e.target.value) })} className="w-full bg-background-dark border border-border-dark rounded h-11 px-3 text-white focus:border-primary focus:outline-none" />
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="flex flex-col gap-1">
+                            <label className="text-xs font-bold text-text-muted uppercase">Workshop Date</label>
+                            <input type="date" required value={formData.date} onChange={e => setFormData({ ...formData, date: e.target.value })} className="w-full bg-background-dark border border-border-dark rounded h-11 px-3 text-white focus:border-primary focus:outline-none" />
+                        </div>
+                        <div className="flex flex-col gap-1">
+                            <label className="text-xs font-bold text-text-muted uppercase">Room</label>
+                            <input value={formData.room} onChange={e => setFormData({ ...formData, room: e.target.value })} placeholder="e.g. Lab 301, Building B" className="w-full bg-background-dark border border-border-dark rounded h-11 px-3 text-white focus:border-primary focus:outline-none" />
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="flex flex-col gap-1">
+                            <label className="text-xs font-bold text-text-muted uppercase">Registration Start</label>
+                            <input type="datetime-local" required value={formData.registrationStart} onChange={e => setFormData({ ...formData, registrationStart: e.target.value })} className="w-full bg-background-dark border border-border-dark rounded h-11 px-3 text-white focus:border-primary focus:outline-none" />
+                        </div>
+                        <div className="flex flex-col gap-1">
+                            <label className="text-xs font-bold text-text-muted uppercase">Registration End</label>
+                            <input type="datetime-local" required value={formData.registrationEnd} onChange={e => setFormData({ ...formData, registrationEnd: e.target.value })} className="w-full bg-background-dark border border-border-dark rounded h-11 px-3 text-white focus:border-primary focus:outline-none" />
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="flex flex-col gap-1">
+                            <label className="text-xs font-bold text-text-muted uppercase">Start Time</label>
+                            <input type="time" required value={formData.timeStart} onChange={e => setFormData({ ...formData, timeStart: e.target.value })} className="w-full bg-background-dark border border-border-dark rounded h-11 px-3 text-white focus:border-primary focus:outline-none" />
+                        </div>
+                        <div className="flex flex-col gap-1">
+                            <label className="text-xs font-bold text-text-muted uppercase">End Time</label>
+                            <input type="time" required value={formData.timeEnd} onChange={e => setFormData({ ...formData, timeEnd: e.target.value })} className="w-full bg-background-dark border border-border-dark rounded h-11 px-3 text-white focus:border-primary focus:outline-none" />
+                        </div>
+                    </div>
+
+                    <div className="p-4 bg-background-dark/50 border border-border-dark rounded-lg flex flex-col gap-4">
+                        <label className="flex items-center gap-3 cursor-pointer">
+                            <input type="checkbox" checked={formData.seatsEnabled} onChange={e => setFormData({ ...formData, seatsEnabled: e.target.checked })} className="w-5 h-5 rounded border-border-dark bg-surface-dark text-primary focus:ring-primary" />
+                            <span className="text-sm font-bold text-white uppercase tracking-wider">Enable Seat Selection</span>
+                        </label>
+
+                        {formData.seatsEnabled && (
+                            <div className="grid grid-cols-2 gap-4 animate-in fade-in slide-in-from-top-1">
+                                <div className="flex flex-col gap-1">
+                                    <label className="text-[10px] font-bold text-text-muted uppercase">Rows (A-Z)</label>
+                                    <input type="number" min="1" max="26" value={formData.rows} onChange={e => setFormData({ ...formData, rows: parseInt(e.target.value) })} className="w-full bg-background-dark border border-border-dark rounded h-10 px-3 text-white text-sm" />
+                                </div>
+                                <div className="flex flex-col gap-1">
+                                    <label className="text-[10px] font-bold text-text-muted uppercase">Columns</label>
+                                    <input type="number" min="1" max="20" value={formData.cols} onChange={e => setFormData({ ...formData, cols: parseInt(e.target.value) })} className="w-full bg-background-dark border border-border-dark rounded h-10 px-3 text-white text-sm" />
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                    <div className="flex justify-end gap-3 mt-4">
+                        <button type="button" onClick={onClose} className="px-4 py-2 text-text-muted hover:text-white font-bold text-sm">Cancel</button>
+                        <button type="submit" className="px-6 py-2 bg-primary text-background-dark font-bold rounded text-sm hover:bg-primary-hover">Create</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    )
+}
+
+function EditWorkshopModal({ workshop, onClose }) {
+    const now = new Date()
+    const [formData, setFormData] = useState({
+        name: workshop?.name || '',
+        quota: workshop?.quota || 40,
+        workshopType: workshop?.workshopType || 'General',
+        workshopType: workshop?.workshopType || 'General',
+        date: workshop?.date || now.toISOString().split('T')[0],
+        registrationStart: workshop?.registrationStart || now.toISOString().slice(0, 16),
+        registrationEnd: workshop?.registrationEnd || now.toISOString().slice(0, 16),
+        timeStart: workshop?.schedule?.split(' ')[1]?.split('-')[0] || '08:00',
+        timeEnd: workshop?.schedule?.split(' ')[1]?.split('-')[1] || '10:00',
+        room: workshop?.room || '',
+    })
+    const [isSubmitting, setIsSubmitting] = useState(false)
+    const { addToast } = useToast()
+
+    const handleSubmit = async (e) => {
+        e.preventDefault()
+        setIsSubmitting(true)
+
+        try {
+            await api.updateWorkshopSession(workshop.id, formData)
+            onClose()
+            addToast('Workshop updated successfully!', 'success')
+            window.location.reload()
+        } catch (err) {
+            console.error(err)
+            addToast(err.message || 'Failed to update workshop', 'error')
+        } finally {
+            setIsSubmitting(false)
+        }
+    }
+
+    return (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in">
+            <div className="bg-surface-dark border border-border-dark w-full max-w-lg rounded-xl shadow-2xl m-4 animate-in zoom-in-95">
+                <div className="flex items-center justify-between p-6 border-b border-border-dark">
+                    <h3 className="text-xl font-bold text-white">Edit Workshop</h3>
+                    <button onClick={onClose} className="text-text-muted hover:text-white"><span className="material-symbols-outlined">close</span></button>
+                </div>
+                <form onSubmit={handleSubmit} className="p-6 flex flex-col gap-4 max-h-[70vh] overflow-y-auto custom-scrollbar">
+
+
+                    <div className="flex flex-col gap-1">
+                        <label className="text-xs font-bold text-text-muted uppercase">Workshop Name</label>
+                        <input
+                            required
+                            value={formData.name}
+                            onChange={e => setFormData({ ...formData, name: e.target.value })}
+                            placeholder="e.g. Advanced AI Programming"
+                            className="w-full bg-background-dark border border-border-dark rounded h-11 px-3 text-white focus:border-primary focus:outline-none"
+                        />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="flex flex-col gap-1">
+                            <label className="text-xs font-bold text-text-muted uppercase">Code</label>
+                            <input value={workshop.code} disabled className="w-full bg-background-dark/50 border border-border-dark rounded h-11 px-3 text-text-muted italic cursor-not-allowed" />
+                        </div>
+                        <div className="flex flex-col gap-1">
+                            <label className="text-xs font-bold text-text-muted uppercase">Credits</label>
+                            <input value={workshop.credits} disabled className="w-full bg-background-dark/50 border border-border-dark rounded h-11 px-3 text-text-muted italic cursor-not-allowed" />
+                        </div>
+                    </div>
+
+                    <div className="flex flex-col gap-1">
+                        <label className="text-xs font-bold text-text-muted uppercase">Quota</label>
+                        <input
+                            type="number"
+                            required
+                            min={workshop?.enrolled || 0}
+                            value={formData.quota}
+                            onChange={e => setFormData({ ...formData, quota: parseInt(e.target.value) })}
+                            className="w-full bg-background-dark border border-border-dark rounded h-11 px-3 text-white focus:border-primary focus:outline-none"
+                        />
+                        <p className="text-xs text-text-muted">Current enrolled: {workshop?.enrolled || 0}</p>
+                    </div>
+
+                    <div className="flex flex-col gap-1">
+                        <label className="text-xs font-bold text-text-muted uppercase">Type</label>
+                        <select
+                            value={formData.workshopType}
+                            disabled
+                            onChange={e => setFormData({ ...formData, workshopType: e.target.value })}
+                            className="w-full bg-background-dark/50 border border-border-dark rounded h-11 px-3 text-text-muted cursor-not-allowed focus:outline-none"
+                        >
+                            <option value="Technical">Technical</option>
+                            <option value="Creative">Creative</option>
+                            <option value="Business">Business</option>
+                            <option value="Leadership">Leadership</option>
+                            <option value="General">General</option>
+                        </select>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="flex flex-col gap-1">
+                            <label className="text-xs font-bold text-text-muted uppercase">Workshop Date</label>
+                            <input type="date" required value={formData.date} onChange={e => setFormData({ ...formData, date: e.target.value })} className="w-full bg-background-dark border border-border-dark rounded h-11 px-3 text-white focus:border-primary focus:outline-none" />
+                        </div>
+                        <div className="flex flex-col gap-1">
+                            <label className="text-xs font-bold text-text-muted uppercase">Room</label>
+                            <input value={formData.room} onChange={e => setFormData({ ...formData, room: e.target.value })} placeholder="e.g. Lab 301" className="w-full bg-background-dark border border-border-dark rounded h-11 px-3 text-white focus:border-primary focus:outline-none" />
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="flex flex-col gap-1">
+                            <label className="text-xs font-bold text-text-muted uppercase">Registration Start</label>
+                            <input type="datetime-local" required value={formData.registrationStart} onChange={e => setFormData({ ...formData, registrationStart: e.target.value })} className="w-full bg-background-dark border border-border-dark rounded h-11 px-3 text-white focus:border-primary focus:outline-none" />
+                        </div>
+                        <div className="flex flex-col gap-1">
+                            <label className="text-xs font-bold text-text-muted uppercase">Registration End</label>
+                            <input type="datetime-local" required value={formData.registrationEnd} onChange={e => setFormData({ ...formData, registrationEnd: e.target.value })} className="w-full bg-background-dark border border-border-dark rounded h-11 px-3 text-white focus:border-primary focus:outline-none" />
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="flex flex-col gap-1">
+                            <label className="text-xs font-bold text-text-muted uppercase">Start Time</label>
+                            <input
+                                type="time"
+                                required
+                                value={formData.timeStart}
+                                onChange={e => setFormData({ ...formData, timeStart: e.target.value })}
+                                className="w-full bg-background-dark border border-border-dark rounded h-11 px-3 text-white focus:border-primary focus:outline-none"
+                            />
+                        </div>
+                        <div className="flex flex-col gap-1">
+                            <label className="text-xs font-bold text-text-muted uppercase">End Time</label>
+                            <input
+                                type="time"
+                                required
+                                value={formData.timeEnd}
+                                onChange={e => setFormData({ ...formData, timeEnd: e.target.value })}
+                                className="w-full bg-background-dark border border-border-dark rounded h-11 px-3 text-white focus:border-primary focus:outline-none"
+                            />
+                        </div>
+                    </div>
+
+
+
+                    <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded text-blue-400 text-xs">
+                        <strong>Note:</strong> Workshop code and credits cannot be modified.
+                    </div>
+
+                    <div className="flex justify-end gap-3 mt-4">
+                        <button type="button" onClick={onClose} disabled={isSubmitting} className="px-4 py-2 text-text-muted hover:text-white font-bold text-sm disabled:opacity-50">Cancel</button>
+                        <button type="submit" disabled={isSubmitting} className="px-6 py-2 bg-blue-500 text-white font-bold rounded text-sm hover:bg-blue-600 disabled:opacity-50">
+                            {isSubmitting ? 'Saving...' : 'Save Changes'}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    )
+}
+
+function WorkshopAccordionItem({ workshop, defaultOpen = false, onUpdate, onMonitorSeats, onEdit }) {
+    const [isOpen, setIsOpen] = useState(defaultOpen)
+    const [students, setStudents] = useState([])
+    const [loading, setLoading] = useState(false)
+    const [searchQuery, setSearchQuery] = useState('')
+    const [isQuotaModalOpen, setIsQuotaModalOpen] = useState(false)
+
+    useEffect(() => {
+        if (defaultOpen) {
+            setIsOpen(true)
+            if (students.length === 0) loadStudents()
+        }
+    }, [defaultOpen])
+
+    const loadStudents = async () => {
+        setLoading(true)
+        try {
+            const response = await api.getEnrolledStudents(workshop.id)
+            setStudents(response.students || [])
+        } catch (err) {
+            console.error('Failed to load students', err)
+        } finally {
+            setLoading(false)
+        }
+    }
+
+    const toggle = () => {
+        if (!isOpen && students.length === 0) {
+            loadStudents()
+        }
+        setIsOpen(!isOpen)
+    }
+
+    const filteredStudents = students.filter(s =>
+        s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        s.nim.includes(searchQuery)
+    )
+
+    return (
+        <div id={`workshop-${workshop.id}`} className="group bg-surface-dark rounded-xl border border-primary/20 ring-1 ring-primary/10 overflow-hidden scroll-mt-20">
+            <div onClick={toggle} className="p-5 cursor-pointer hover:bg-[#333025] transition-all flex flex-col sm:flex-row justify-between sm:items-start gap-4">
+                <div className="flex gap-4">
+                    <div className="w-12 h-12 rounded-lg bg-primary/20 flex items-center justify-center text-primary font-bold text-lg border border-primary/30">
+                        {workshop.code.substring(0, 2).toUpperCase()}
+                    </div>
+                    <div>
+                        <div className="flex items-center gap-2">
+                            <h3 className={`text-white text-lg font-bold transition-colors ${isOpen ? 'text-primary' : ''}`}>
+                                {workshop.code} - {workshop.name}
+                            </h3>
+                            {workshop.workshopType && (
+                                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-white/10 text-text-muted border border-white/10">
+                                    {workshop.workshopType}
+                                </span>
+                            )}
+                            {workshop.status && (
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${workshop.status === 'done' ? 'bg-gray-500/20 text-gray-400 border-gray-500/30' : 'bg-green-500/20 text-green-400 border-green-500/30'}`}>
+                                    {workshop.status === 'done' ? 'Done' : 'Active'}
+                                </span>
+                            )}
+                        </div>
+                        <div className="flex flex-col gap-1">
+                            <p className="text-text-muted text-sm">
+                                {workshop.credits} Credits • {workshop.room || 'Room TBD'}
+                                {workshop.month && workshop.year && workshop.date ? (
+                                    <span> • {new Date(workshop.date).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span>
+                                ) : (
+                                    workshop.month && workshop.year && (
+                                        <span> • {['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][workshop.month]} {workshop.year}</span>
+                                    )
+                                )}
+                            </p>
+                            <div className="flex items-center gap-1 text-xs text-primary/90 font-medium">
+                                <span className="material-symbols-outlined text-[14px]">schedule</span>
+                                {workshop.schedule || 'Schedule TBD'}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-2 bg-[#181611] px-3 py-1.5 rounded text-xs text-white border border-border-dark">
+                        <span className="material-symbols-outlined text-[16px] text-primary">group</span>
+                        {workshop.enrolled || 0}/{workshop.quota} Enrolled
+                    </div>
+                    <span className={`material-symbols-outlined text-text-muted transition-transform ${isOpen ? 'rotate-180' : ''}`}>expand_more</span>
+                </div>
+            </div>
+
+            {isOpen && (
+                <div className="border-t border-border-dark bg-[#1d1b14] animate-in fade-in slide-in-from-top-2">
+                    <div className="p-5 flex flex-col md:flex-row justify-between items-center gap-4 border-b border-border-dark">
+                        <div className="flex flex-col gap-2 w-full md:max-w-md">
+                            <div className="relative w-full">
+                                <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-text-muted text-[20px]">search</span>
+                                <input value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full bg-surface-dark border border-border-dark rounded-lg py-2 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-primary placeholder:text-[#6b6754]" placeholder="Search student..." />
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            {/* EDIT BUTTON */}
+                            <button
+                                onClick={() => onEdit && onEdit(workshop)}
+                                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-500/20 border border-blue-500/50 text-blue-400 text-sm font-bold hover:bg-blue-500/30 transition-colors whitespace-nowrap"
+                            >
+                                <span className="material-symbols-outlined text-[18px]">edit</span>
+                                Edit
+                            </button>
+
+                            {/* MONITOR SEATS BUTTON */}
+                            {(workshop.seatsEnabled || true) && ( // Always showing for now for demo, or check flag
+                                <button
+                                    onClick={() => onMonitorSeats(workshop.id)} // workshop.id is likely the sessionId/classId
+                                    className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary/20 border border-primary/50 text-primary text-sm font-bold hover:bg-primary/30 transition-colors whitespace-nowrap"
+                                >
+                                    <span className="material-symbols-outlined text-[18px]">grid_view</span>
+                                    Monitor Seats
+                                </button>
+                            )}
+
+                            <button
+                                onClick={() => setIsQuotaModalOpen(true)}
+                                className="flex items-center gap-2 px-4 py-2 rounded-lg border border-primary/30 text-primary text-sm font-bold hover:bg-primary-hover transition-colors whitespace-nowrap"
+                            >
+                                <span className="material-symbols-outlined text-[18px]">add_circle</span>
+                                Extend
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="divide-y divide-border-dark max-h-[400px] overflow-y-auto custom-scrollbar">
+                        {loading ? (
+                            <div className="p-10 text-center"><LoadingSpinner size="sm" text="Loading..." /></div>
+                        ) : filteredStudents.length > 0 ? (
+                            filteredStudents.map((student, idx) => (
+                                <div key={student.id || idx} className="p-4 hover:bg-white/5 transition-colors flex justify-between items-center px-6">
+                                    <div className="flex items-center gap-4">
+                                        <div className="w-9 h-9 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center text-primary text-xs font-bold">{student.name.charAt(0)}</div>
+                                        <div>
+                                            <p className="text-white text-sm font-medium">{student.name}</p>
+                                            <p className="text-text-muted text-xs">{student.nim}</p>
+                                        </div>
+                                    </div>
+                                    <div className="text-right">
+                                        {/* Show Seat if available */}
+                                        {student.seatNumber && (
+                                            <span className="inline-block px-2 py-0.5 bg-primary/20 text-primary text-[10px] font-bold rounded mr-2">
+                                                Seat {student.seatNumber}
+                                            </span>
+                                        )}
+                                        <span className="text-white text-[11px]">{student.status || 'Active'}</span>
+                                    </div>
+                                </div>
+                            ))
+                        ) : (
+                            <div className="p-8 text-center text-text-muted text-sm">No students found.</div>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {isQuotaModalOpen && (
+                <UpdateQuotaModal course={workshop} onClose={() => setIsQuotaModalOpen(false)} onSuccess={() => { setIsQuotaModalOpen(false); if (onUpdate) onUpdate(); }} />
+            )}
+        </div>
+    )
+}
+
+function UpdateQuotaModal({ course, onClose, onSuccess }) {
+    const [quota, setQuota] = useState(course.quota)
+    const [isLoading, setIsLoading] = useState(false)
+
+    const handleSubmit = async (e) => {
+        e.preventDefault()
+        setIsLoading(true)
+        try {
+            await api.updateSessionQuota(course.id, parseInt(quota))
+            onSuccess()
+        } catch (err) {
+            console.error(err)
+            alert('Failed')
+        } finally {
+            setIsLoading(false)
+        }
+    }
+
+    return (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in">
+            <div className="bg-surface-dark border border-border-dark w-full max-w-md rounded-xl shadow-2xl m-4 animate-in zoom-in-95">
+                <div className="flex items-center justify-between p-6 border-b border-border-dark">
+                    <h3 className="text-xl font-bold text-white">Extend Quota</h3>
+                    <button onClick={onClose} className="text-text-muted hover:text-white"><span className="material-symbols-outlined">close</span></button>
+                </div>
+                <form onSubmit={handleSubmit} className="p-6 flex flex-col gap-4">
+                    <p className="text-sm">Current: {course.quota}. Enrolled: {course.enrolled || 0}</p>
+                    <input type="number" required min={course.enrolled || 0} value={quota} onChange={e => setQuota(e.target.value)} className="w-full bg-background-dark border border-border-dark rounded h-10 px-3 text-white" />
+                    <div className="flex justify-end gap-3 mt-4">
+                        <button type="button" onClick={onClose} className="px-4 py-2 text-text-muted hover:text-white font-bold text-sm">Cancel</button>
+                        <button type="submit" disabled={isLoading} className="px-6 py-2 bg-primary text-background-dark font-bold rounded text-sm hover:bg-primary-hover">Update</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    )
+}
+
+function TrafficControl() {
+    const [metrics, setMetrics] = useState({ activeUsers: 0, waitingUsers: 0, limit: 5000 })
+    const [newLimit, setNewLimit] = useState(5000)
+    const [isLoading, setIsLoading] = useState(true)
+    const [isSaving, setIsSaving] = useState(false)
+    const [successMsg, setSuccessMsg] = useState(null)
+    const [activeUserList, setActiveUserList] = useState(null)
+    const [waitingUserList, setWaitingUserList] = useState(null)
+    const [showActive, setShowActive] = useState(false)
+    const [showWaiting, setShowWaiting] = useState(false)
+
+    useEffect(() => {
+        fetchMetrics()
+        const interval = setInterval(fetchMetrics, 3000)
+        return () => clearInterval(interval)
+    }, [])
+
+    const fetchMetrics = async () => {
+        try {
+            const data = await api.getQueueMetrics()
+            if (data.success) setMetrics({ activeUsers: data.activeUsers, waitingUsers: data.waitingUsers, limit: data.limit })
+        } catch (err) { console.error(err) } finally { setIsLoading(false) }
+    }
+
+    useEffect(() => { if (!isLoading && metrics.limit) setNewLimit(metrics.limit) }, [isLoading])
+
+    const handleSaveLimit = async () => {
+        setIsSaving(true)
+        setSuccessMsg(null)
+        try {
+            await api.setQueueLimit(newLimit)
+            setSuccessMsg("Updated!")
+            fetchMetrics()
+            setTimeout(() => setSuccessMsg(null), 3000)
+        } catch (err) { alert(err.message) } finally { setIsSaving(false) }
+    }
+
+    const loadActiveUsers = async () => {
+        if (showActive) { setShowActive(false); return }
+        try {
+            const data = await api.getQueueActiveUsers()
+            setActiveUserList(data.users || [])
+            setShowActive(true)
+        } catch (err) { console.error(err) }
+    }
+
+    const loadWaitingUsers = async () => {
+        if (showWaiting) { setShowWaiting(false); return }
+        try {
+            const data = await api.getQueueWaitingUsers()
+            setWaitingUserList(data.users || [])
+            setShowWaiting(true)
+        } catch (err) { console.error(err) }
+    }
+
+    const UserList = ({ users, type }) => (
+        <div className="mt-3 max-h-[200px] overflow-y-auto custom-scrollbar divide-y divide-border-dark border border-border-dark rounded-lg bg-[#181611]">
+            {users.length === 0 ? (
+                <p className="p-4 text-text-muted text-xs text-center">No users</p>
+            ) : users.map((u, i) => (
+                <div key={u.id || i} className="flex items-center gap-3 px-4 py-2.5 hover:bg-white/5">
+                    <div className="w-7 h-7 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center text-primary text-[10px] font-bold">
+                        {u.name?.charAt(0) || '?'}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                        <p className="text-white text-xs font-medium truncate">{u.name}</p>
+                        <p className="text-text-muted text-[10px] truncate">{u.nimNidn} • {u.email}</p>
+                    </div>
+                    {type === 'waiting' && u.position && (
+                        <span className="text-primary text-[10px] font-bold">#{u.position}</span>
+                    )}
+                </div>
+            ))}
+        </div>
+    )
+
+    return (
+        <div className="flex-1 w-full flex flex-col items-center px-6 py-12 gap-8 max-w-4xl mx-auto animate-in fade-in custom-scrollbar overflow-y-auto">
+            <div className="text-center space-y-2">
+                <h1 className="text-3xl font-black tracking-tight uppercase text-white">System Traffic Control</h1>
+                <p className="text-text-muted text-sm">Real-time queue management for student registration periods.</p>
+            </div>
+
+            <div className="w-full max-w-2xl flex flex-col gap-8">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <section className="flex flex-col items-center justify-center p-8 bg-[#211d11] border border-border-dark rounded-3xl shadow-xl relative overflow-hidden group hover:border-green-500/30 transition-colors">
+                            <div className="absolute top-0 left-0 w-full h-1 bg-green-500/50"></div>
+                            <div className="bg-green-500/10 p-2 rounded-full mb-4"><span className="material-symbols-outlined text-green-500">check_circle</span></div>
+                            <p className="text-green-500 text-xs font-bold uppercase tracking-[0.2em] mb-2 text-center">Active Students</p>
+                            <div className="flex flex-col items-center">
+                                <span className="text-6xl font-black text-white tracking-tighter tabular-nums">{metrics.activeUsers.toLocaleString()}</span>
+                                <p className="text-text-muted text-xs font-medium mt-1">Currently Selecting</p>
+                            </div>
+                        </section>
+                        <button onClick={loadActiveUsers} className="w-full mt-2 py-1.5 text-xs font-bold text-green-400 hover:text-green-300 bg-green-500/10 hover:bg-green-500/20 border border-green-500/20 rounded-lg transition-colors flex items-center justify-center gap-1">
+                            <span className="material-symbols-outlined text-[14px]">{showActive ? 'expand_less' : 'expand_more'}</span>
+                            {showActive ? 'Hide Details' : 'View Details'}
+                        </button>
+                        {showActive && activeUserList && <UserList users={activeUserList} type="active" />}
+                    </div>
+                    <div>
+                        <section className="flex flex-col items-center justify-center p-8 bg-[#211d11] border border-border-dark rounded-3xl shadow-xl relative overflow-hidden group hover:border-green-500/30 transition-colors">
+                            <div className="absolute top-0 left-0 w-full h-1 bg-primary/50"></div>
+                            <div className="bg-primary/10 p-2 rounded-full mb-4"><span className="material-symbols-outlined text-primary">hourglass_top</span></div>
+                            <p className="text-primary text-xs font-bold uppercase tracking-[0.2em] mb-2 text-center">Waiting Queue</p>
+                            <div className="flex flex-col items-center">
+                                <span className="text-6xl font-black text-white tracking-tighter tabular-nums">{metrics.waitingUsers.toLocaleString()}</span>
+                                <p className="text-text-muted text-xs font-medium mt-1">In Line</p>
+                            </div>
+                        </section>
+                        <button onClick={loadWaitingUsers} className="w-full mt-2 py-1.5 text-xs font-bold text-primary hover:text-primary-hover bg-primary/10 hover:bg-primary/20 border border-primary/20 rounded-lg transition-colors flex items-center justify-center gap-1">
+                            <span className="material-symbols-outlined text-[14px]">{showWaiting ? 'expand_less' : 'expand_more'}</span>
+                            {showWaiting ? 'Hide Details' : 'View Details'}
+                        </button>
+                        {showWaiting && waitingUserList && <UserList users={waitingUserList} type="waiting" />}
+                    </div>
+                </div>
+
+                <div className="bg-[#1d1b14] border border-border-dark rounded-2xl p-6 shadow-2xl">
+                    <div className="flex flex-col gap-4">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <h3 className="text-white font-bold text-lg">Active User Limit</h3>
+                                <p className="text-text-muted text-sm">Max capacity for concurrent active users.</p>
+                            </div>
+                            <div className="px-3 py-1 bg-surface-dark border border-border-dark rounded text-xs text-text-muted">Current: {metrics.limit}</div>
+                        </div>
+                        <div className="flex gap-4">
+                            <input type="number" value={newLimit} onChange={(e) => setNewLimit(parseInt(e.target.value))} className="flex-1 bg-surface-dark border border-border-dark rounded-lg px-4 text-white font-bold text-center text-xl focus:border-primary focus:outline-none" />
+                            <button onClick={handleSaveLimit} disabled={isSaving} className="px-8 bg-primary hover:bg-primary-hover text-background-dark font-bold rounded-lg transition-colors disabled:opacity-50">
+                                {isSaving ? 'Saving...' : 'Update Limit'}
+                            </button>
+                        </div>
+                        {successMsg && <p className="text-green-500 text-sm font-bold text-center animate-in fade-in">{successMsg}</p>}
+                    </div>
+                </div>
+            </div>
+        </div>
+    )
+}
