@@ -86,6 +86,10 @@ type Enrollment struct {
 	SeatNumber   string     `json:"seatNumber,omitempty"`
 	SeatID       string     `json:"seatId,omitempty"`
 	Date         string     `json:"date,omitempty"`
+	Rating       int        `json:"rating,omitempty"`
+	Review       string     `json:"review,omitempty"`
+	RatedAt      string     `json:"ratedAt,omitempty"`
+	IsCompleted  bool       `json:"isCompleted"`
 }
 
 type Seat struct {
@@ -149,6 +153,13 @@ func init() {
 	db.SetMaxOpenConns(10)
 	db.SetMaxIdleConns(5)
 	db.SetConnMaxLifetime(time.Hour)
+
+	// AUTO-FIX: Removed manual schema cleanup.
+	// This is now handled by V7 migration to properly coordinate with Flyway.
+	// _, _ = db.Exec(`DROP TRIGGER IF EXISTS trigger_auto_regenerate_seats ON workshop_sessions`)
+	// _, _ = db.Exec(`DROP FUNCTION IF EXISTS auto_regenerate_seats()`)
+	// _, _ = db.Exec(`DROP FUNCTION IF EXISTS generate_seats_for_session(UUID)`)
+	log.Println("Database connection established.")
 
 	// Connect to Redis
 	redisAddr := os.Getenv("REDIS_ADDR")
@@ -2237,74 +2248,90 @@ func SyncSeatsWithQuota(ctx context.Context, db DBExecutor, sessionId string, ne
 
 	currentCount := len(seats)
 
-	// CASE 1: Add Seats
+	// 2. Identify seats to ADD
 	if currentCount < newQuota {
-		toAdd := newQuota - currentCount
-		log.Printf("Adding %d seats to session %s", toAdd, sessionId)
+		seatsNeeded := newQuota - currentCount
+		log.Printf("[SyncSeats] Adding %d seats to reach quota %d", seatsNeeded, newQuota)
 
-		// Determine where to start
-		// Default layout 10 cols per row
+		// Define layout strategy: 10 columns per row
 		const colsPerRow = 10
 
-		startIndex := currentCount // 0-based index for next seat
+		// We append new seats starting from the next logical index
+		// 'currentCount' is effectively the index of the next seat (0-based)
+		nextIndex := currentCount
 
-		for i := 0; i < toAdd; i++ {
-			absIndex := startIndex + i
-			rowIdx := absIndex / colsPerRow
-			colIdx := (absIndex % colsPerRow) + 1
+		for i := 0; i < seatsNeeded; i++ {
+			absIndex := nextIndex + i
 
-			// Row Letter: 0=A, 1=B, etc.
-			// Handle > 26 rows? AA? For now assume char logic A-Z
-			rowChar := string(rune('A' + rowIdx))
-			seatNum := fmt.Sprintf("%s%d", rowChar, colIdx)
+			// Calculate Row and Col
+			rowIndex := absIndex / colsPerRow
+			colNumber := (absIndex % colsPerRow) + 1
 
+			// Generate Row Letter (A, B, ... Z, AA, AB ...)
+			// Simple logic for A-Z (0-25)
+			// For >26 rows, we need a better converter, but for now assuming < 26 rows (260 seats)
+			var rowLetter string
+			if rowIndex < 26 {
+				rowLetter = string(rune('A' + rowIndex))
+			} else {
+				// Fallback for huge classes: AA, AB...
+				// rowIndex 26 -> AA
+				firstChar := string(rune('A' + (rowIndex / 26) - 1))
+				secondChar := string(rune('A' + (rowIndex % 26)))
+				rowLetter = firstChar + secondChar
+			}
+
+			seatNumber := fmt.Sprintf("%s%d", rowLetter, colNumber)
+
+			// Insert new seat
+			// Use UPSERT to allow filling gaps if we have holes in IDs but unique constraints match
 			_, err := db.ExecContext(ctx, `
-				INSERT INTO seats (workshop_session_id, seat_number, row_letter, column_number, status)
-				VALUES ($1, $2, $3, $4, 'AVAILABLE')
-				ON CONFLICT DO NOTHING
-			`, sessionId, seatNum, rowChar, colIdx)
+				INSERT INTO seats (id, workshop_session_id, seat_number, row_letter, column_number, status)
+				VALUES (gen_random_uuid(), $1, $2, $3, $4, 'AVAILABLE')
+				ON CONFLICT (workshop_session_id, seat_number) DO NOTHING
+			`, sessionId, seatNumber, rowLetter, colNumber)
+
 			if err != nil {
-				return err
+				return fmt.Errorf("failed to generate seat %s: %v", seatNumber, err)
 			}
 		}
 
-		// CASE 2: Remove Seats
+		// 3. Identify seats to REMOVE
 	} else if currentCount > newQuota {
-		toRemove := currentCount - newQuota
-		log.Printf("Removing %d seats from session %s", toRemove, sessionId)
+		seatsToRemoveCount := currentCount - newQuota
+		log.Printf("[SyncSeats] Removing %d seats to reduce quota to %d", seatsToRemoveCount, newQuota)
 
-		// Iterate backwards to find removable seats
-		// We can ONLY remove 'AVAILABLE' seats.
-		// If we hit an OCCUPIED/RESERVED seat that needs to be removed to meet quota, we fail?
-		// Or we specifically target the "highest index" available seats?
-		// Ideally we trim from the end (highest row/col).
+		// Strategy: Remove from the END (highest Row/Col) first.
+		// Filter only AVAILABLE seats.
+		// 'seats' slice is already ordered by row_letter, column_number ASC
 
-		removedCount := 0
-		// Walk backwards
-		for i := currentCount - 1; i >= 0; i-- {
-			if removedCount >= toRemove {
+		removed := 0
+		// Iterate backwards
+		for i := len(seats) - 1; i >= 0; i-- {
+			if removed >= seatsToRemoveCount {
 				break
 			}
 
 			s := seats[i]
+			// Only remove if it is NOT occupied/reserved
 			if s.Status == "AVAILABLE" {
 				_, err := db.ExecContext(ctx, `DELETE FROM seats WHERE id = $1`, s.ID)
 				if err != nil {
-					return err
+					return fmt.Errorf("failed to remove seat %s: %v", s.SeatNumber, err)
 				}
-				removedCount++
+				removed++
 			}
 		}
 
-		if removedCount < toRemove {
-			return fmt.Errorf("CANNOT_REDUCE_QUOTA: %d seats are occupied/reserved", (toRemove - removedCount))
+		if removed < seatsToRemoveCount {
+			return fmt.Errorf("CANNOT_REDUCE_QUOTA: Only %d seats could be removed. %d seats are currently occupied or reserved.", removed, (seatsToRemoveCount - removed))
 		}
 	}
 
 	return nil
 }
 
-func getCurrentTimestamp() string {
+func GetCurrentTimestamp() string {
 	return time.Now().Format(time.RFC3339)
 }
 
@@ -2363,7 +2390,7 @@ func GetQueueActiveUserDetails(ctx context.Context) ([]map[string]interface{}, e
 			SELECT name, email, nim_nidn FROM users WHERE id = $1
 		`, uid).Scan(&name, &email, &nimNidn)
 		if err != nil {
-			continue
+			continue // Skip if user not found (stale redis data?)
 		}
 		users = append(users, map[string]interface{}{
 			"id":      uid,
@@ -2382,7 +2409,9 @@ func GetQueueActiveUserDetails(ctx context.Context) ([]map[string]interface{}, e
 // GetQueueWaitingUserDetails returns details of users in the waiting queue
 func GetQueueWaitingUserDetails(ctx context.Context) ([]map[string]interface{}, error) {
 	// Get user IDs from Redis waiting_queue sorted set (ordered by score/join time)
-	members, err := redisClient.ZRangeWithScores(ctx, "waiting_queue", 0, -1).Result()
+	// ZRangeWithScores returns members with scores, but we just need members for now?
+	// Actually we just need IDs to look up.
+	members, err := redisClient.ZRange(ctx, "waiting_queue", 0, -1).Result()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get waiting queue: %v", err)
 	}
@@ -2392,8 +2421,8 @@ func GetQueueWaitingUserDetails(ctx context.Context) ([]map[string]interface{}, 
 	}
 
 	var users []map[string]interface{}
-	for i, member := range members {
-		uid := member.Member.(string)
+	// Range returns []string of members
+	for i, uid := range members {
 		var name, email, nimNidn string
 		err := db.QueryRowContext(ctx, `
 			SELECT name, email, nim_nidn FROM users WHERE id = $1

@@ -149,6 +149,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      flyway:
+        condition: service_completed_successfully
     environment:
       PORT: 8080
       DATABASE_URL: postgresql://krs_admin:UKSWKrs2024!Secure@postgres:5432/uksw_krs?sslmode=disable
@@ -185,8 +187,8 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://192.168.0.111:8080/api}
-        VITE_WS_BASE_URL: ${VITE_WS_BASE_URL:-ws://192.168.0.111:8080/ws}
+        VITE_API_BASE_URL: /api
+        VITE_WS_BASE_URL: /ws
     container_name: sia-frontend
     restart: unless-stopped
     depends_on:
@@ -205,6 +207,10 @@ services:
   # OBSERVABILITY
   # ============================================
 
+  # ============================================
+  # OBSERVABILITY
+  # ============================================
+
   jaeger:
     image: jaegertracing/all-in-one:latest
     container_name: sia-jaeger
@@ -218,3 +224,21 @@ services:
       - COLLECTOR_OTLP_ENABLED=true
     networks:
       - sia-network
+
+  # ============================================
+  # PUBLIC ACCESS (NGROK)
+  # ============================================
+
+  ngrok:
+    image: ngrok/ngrok:latest
+    container_name: sia-ngrok
+    restart: unless-stopped
+    command: "http frontend:80"
+    environment:
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN}
+    ports:
+      - "4040:4040"
+    networks:
+      - sia-network
+    depends_on:
+      - frontend

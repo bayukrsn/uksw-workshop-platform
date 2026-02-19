@@ -1,7 +1,20 @@
 // API Client for SIA.Sat - React Version
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://192.168.0.111:8080/api'
 
-const WS_BASE_URL = import.meta.env.VITE_WS_BASE_URL || 'ws://192.168.0.111:8080/ws'
+const getWsUrl = () => {
+    const envUrl = import.meta.env.VITE_WS_BASE_URL;
+    // If absolute URL, use it directly
+    if (envUrl && (envUrl.startsWith('ws://') || envUrl.startsWith('wss://'))) {
+        return envUrl;
+    }
+    // If relative or missing, construct from current window location
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = window.location.host;
+    const path = envUrl && envUrl.startsWith('/') ? envUrl : '/ws';
+    return `${protocol}//${host}${path}`;
+};
+
+const WS_BASE_URL = getWsUrl();
 
 class APIClient {
     constructor() {
@@ -25,6 +38,7 @@ class APIClient {
     getHeaders() {
         const headers = {
             'Content-Type': 'application/json',
+            'ngrok-skip-browser-warning': 'true',
         }
         const token = this.getToken()
         if (token) {
@@ -183,6 +197,17 @@ class APIClient {
         return this.request('/enrollment/my-workshops')
     }
 
+    async getEnrollmentHistory() {
+        return this.request('/enrollment/history')
+    }
+
+    async rateWorkshop(enrollmentId, rating, review = '') {
+        return this.request(`/enrollment/${enrollmentId}/rate`, {
+            method: 'POST',
+            body: JSON.stringify({ rating, review }),
+        })
+    }
+
     // Mentor
     async getMentorWorkshops() {
         return this.request('/mentor/workshops')
@@ -219,6 +244,30 @@ class APIClient {
             method: 'GET',
         })
     }
+
+    async getMentorFeedback() {
+        return this.request('/mentor/feedback')
+    }
+
+    async forgotPassword(nim, email, newPassword) {
+        return this.request('/auth/forgot-password', {
+            method: 'POST',
+            body: JSON.stringify({ nim, email, newPassword }),
+        })
+    }
+
+    async getPasswordResetRequests(status = 'PENDING') {
+        return this.request(`/mentor/password-resets?status=${status}`)
+    }
+
+    async approvePasswordReset(requestId) {
+        return this.request(`/mentor/password-resets/${requestId}/approve`, { method: 'POST' })
+    }
+
+    async rejectPasswordReset(requestId) {
+        return this.request(`/mentor/password-resets/${requestId}/reject`, { method: 'POST' })
+    }
+
 
     async updateStudentCreditLimit(studentId, maxCredits) {
         return this.request(`/mentor/students/${studentId}/credit-limit`, {

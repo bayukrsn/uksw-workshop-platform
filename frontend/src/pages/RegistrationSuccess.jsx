@@ -212,8 +212,8 @@ export default function RegistrationSuccess() {
                                 <h2 className="text-xl font-bold text-white">{user?.name || 'Student'}</h2>
                                 <p className="text-text-muted">NIM: {user?.nim || '-'}</p>
                             </div>
-                            <div className="flex items-center gap-4">
-                                <div className="text-right">
+                            <div className="w-full sm:w-auto flex items-center gap-4 border-t sm:border-t-0 border-border-dark pt-4 sm:pt-0 mt-2 sm:mt-0">
+                                <div className="text-left sm:text-right flex-1 sm:flex-initial">
                                     <p className="text-xs text-text-muted uppercase tracking-wider">Total Credits</p>
                                     <p className="text-2xl font-bold text-primary">{totalCredits} Credits</p>
                                 </div>
@@ -227,8 +227,8 @@ export default function RegistrationSuccess() {
                             <h3 className="text-lg font-bold text-white">Enrolled Workshops</h3>
                         </div>
 
-                        <div className="overflow-x-auto">
-                            <table className="w-full">
+                        <div className="w-full overflow-x-auto">
+                            <table className="w-full min-w-[800px]">
                                 <thead className="bg-background-dark/50">
                                     <tr>
                                         <th className="px-6 py-3 text-left text-xs font-bold text-text-muted uppercase tracking-wider">No</th>

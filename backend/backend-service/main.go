@@ -120,6 +120,9 @@ func setupRoutes(router *gin.Engine) {
 		// Public registration route
 		api.POST("/register", handleRegister)
 
+		// Public forgot password route
+		api.POST("/auth/forgot-password", handleRequestPasswordReset)
+
 		queue := api.Group("/queue")
 		queue.Use(AuthMiddleware())
 		{
@@ -150,7 +153,7 @@ func setupRoutes(router *gin.Engine) {
 			workshops.GET("/my-seat-reservation", handleGetMySeatReservation)
 		}
 
-		// Enrollment routes (workshop enrollment)
+		// Enrollment routes — require active queue session for registration actions
 		enrollment := api.Group("/enrollment")
 		enrollment.Use(AuthMiddleware())
 		enrollment.Use(RequireQueueActive())
@@ -158,6 +161,14 @@ func setupRoutes(router *gin.Engine) {
 			enrollment.POST("/add", handleEnrollWorkshop)
 			enrollment.DELETE("/:id", handleDropWorkshop)
 			enrollment.GET("/my-workshops", handleGetMyWorkshops)
+		}
+
+		// Enrollment history & rating — accessible without active queue session
+		enrollmentHistory := api.Group("/enrollment")
+		enrollmentHistory.Use(AuthMiddleware())
+		{
+			enrollmentHistory.GET("/history", handleGetEnrollmentHistory)
+			enrollmentHistory.POST("/:id/rate", handleRateWorkshop)
 		}
 
 		// Mentor routes
@@ -180,6 +191,13 @@ func setupRoutes(router *gin.Engine) {
 			mentor.GET("/students", handleGetAllStudents)
 			mentor.PUT("/students/:studentId/credit-limit", handleUpdateStudentCreditLimit)
 
+			// Feedback summary
+			mentor.GET("/feedback", handleGetMentorFeedback)
+
+			// Password reset management
+			mentor.GET("/password-resets", handleGetPasswordResetRequests)
+			mentor.POST("/password-resets/:id/approve", handleApprovePasswordReset)
+			mentor.POST("/password-resets/:id/reject", handleRejectPasswordReset)
 		}
 	}
 }

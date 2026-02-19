@@ -2,6 +2,11 @@
 -- Allows specifying rows and columns for seat generation
 
 -- Drop existing function if exists (to avoid signature conflicts if we were just replacing, but we are changing signature)
+-- Drop dependent trigger and function first
+DROP TRIGGER IF EXISTS trigger_auto_regenerate_seats ON workshop_sessions;
+DROP FUNCTION IF EXISTS auto_regenerate_seats();
+
+-- Drop existing function if exists
 DROP FUNCTION IF EXISTS generate_seats_for_session(UUID);
 
 -- Create new function with rows and cols parameters

@@ -81,22 +81,24 @@ export default function Register() {
     return (
         <div className="relative flex min-h-screen w-full flex-col bg-background-dark overflow-x-hidden">
             {/* Header */}
-            <header className="flex items-center justify-between whitespace-nowrap border-b border-border-dark px-6 md:px-10 py-3">
-                <div className="flex items-center gap-3 text-white">
-                    <div className="size-8 flex items-center justify-center bg-primary/20 rounded-lg text-primary">
-                        <span className="material-symbols-outlined text-[20px]">school</span>
+            <header className="flex items-center justify-center border-b border-border-dark py-3 px-4">
+                <div className="w-full max-w-7xl flex items-center justify-between">
+                    <div className="flex items-center gap-3 text-white">
+                        <div className="size-8 flex items-center justify-center bg-primary/20 rounded-lg text-primary">
+                            <span className="material-symbols-outlined text-[20px]">school</span>
+                        </div>
+                        <h2 className="text-white text-lg font-bold leading-tight tracking-tight">UKSW Workshops</h2>
                     </div>
-                    <h2 className="text-white text-lg font-bold leading-tight tracking-tight">UKSW Workshops</h2>
+                    <Link to="/" className="flex items-center justify-center rounded-lg h-9 px-4 bg-transparent hover:bg-border-dark text-white text-sm font-medium transition-colors gap-2">
+                        <span className="material-symbols-outlined text-[18px]">arrow_back</span>
+                        <span className="hidden sm:inline">Back to Login</span>
+                    </Link>
                 </div>
-                <Link to="/" className="flex items-center justify-center rounded-lg h-9 px-4 bg-transparent hover:bg-border-dark text-white text-sm font-medium transition-colors gap-2">
-                    <span className="material-symbols-outlined text-[18px]">arrow_back</span>
-                    <span className="hidden sm:inline">Back to Login</span>
-                </Link>
             </header>
 
             {/* Main Content */}
-            <main className="flex-1 flex flex-col items-center justify-center p-4 md:p-6">
-                <div className="w-full max-w-[480px] flex flex-col gap-6 animate-in">
+            <main className="flex-1 flex flex-col items-center justify-center p-4">
+                <div className="w-full max-w-lg flex flex-col gap-6 animate-in">
                     <div className="bg-surface-dark rounded-xl shadow-xl border border-border-dark overflow-hidden">
                         {/* Title */}
                         <div className="px-8 pt-8 pb-4 flex flex-col items-center border-b border-border-dark bg-background-dark/50">

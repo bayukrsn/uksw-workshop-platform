@@ -22,6 +22,16 @@ export default function Header({ title = 'UKSW Workshops Platform' }) {
             </div>
 
             <div className="flex items-center gap-4">
+                {user && user.role === 'STUDENT' && (
+                    <button
+                        onClick={() => navigate('/history')}
+                        className="flex items-center gap-2 rounded-lg bg-surface-dark border border-border-dark px-4 py-2 text-sm font-bold text-text-muted hover:text-white hover:border-primary transition-all group"
+                    >
+                        <span className="material-symbols-outlined text-[20px] group-hover:text-primary transition-colors">history_edu</span>
+                        <span className="hidden sm:inline">Enrollment History</span>
+                    </button>
+                )}
+
                 {user && (
                     <div className="flex items-center gap-3">
                         <div className="text-right hidden md:block">

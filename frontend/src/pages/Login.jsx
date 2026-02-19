@@ -54,22 +54,24 @@ export default function Login() {
     return (
         <div className="relative flex min-h-screen w-full flex-col bg-background-dark overflow-x-hidden">
             {/* Header */}
-            <header className="flex items-center justify-between whitespace-nowrap border-b border-border-dark px-6 md:px-10 py-3">
-                <div className="flex items-center gap-3 text-white">
-                    <div className="size-8 flex items-center justify-center bg-primary/20 rounded-lg text-primary">
-                        <span className="material-symbols-outlined text-[20px]">school</span>
+            <header className="flex items-center justify-center border-b border-border-dark py-3 px-4">
+                <div className="w-full max-w-7xl flex items-center justify-between">
+                    <div className="flex items-center gap-3 text-white">
+                        <div className="size-8 flex items-center justify-center bg-primary/20 rounded-lg text-primary">
+                            <span className="material-symbols-outlined text-[20px]">school</span>
+                        </div>
+                        <h2 className="text-white text-lg font-bold leading-tight tracking-tight">UKSW Workshops</h2>
                     </div>
-                    <h2 className="text-white text-lg font-bold leading-tight tracking-tight">UKSW Workshops</h2>
+                    <button className="flex items-center justify-center rounded-lg h-9 px-4 bg-transparent hover:bg-border-dark text-white text-sm font-medium transition-colors gap-2">
+                        <span className="material-symbols-outlined text-[18px]">help</span>
+                        <span className="hidden sm:inline">Help Center</span>
+                    </button>
                 </div>
-                <button className="flex items-center justify-center rounded-lg h-9 px-4 bg-transparent hover:bg-border-dark text-white text-sm font-medium transition-colors gap-2">
-                    <span className="material-symbols-outlined text-[18px]">help</span>
-                    <span className="hidden sm:inline">Help Center</span>
-                </button>
             </header>
 
             {/* Main Content */}
-            <main className="flex-1 flex flex-col items-center justify-center p-4 md:p-6">
-                <div className="w-full max-w-[420px] flex flex-col gap-6 animate-in">
+            <main className="flex-1 flex flex-col items-center justify-center p-4">
+                <div className="w-full max-w-md flex flex-col gap-6 animate-in">
                     <div className="bg-surface-dark rounded-xl shadow-xl border border-border-dark overflow-hidden">
                         {/* Tabs */}
                         <div className="flex border-b border-border-dark bg-background-dark/50">
@@ -170,9 +172,9 @@ export default function Login() {
                                         />
                                         <span className="text-xs text-text-muted">Remember me</span>
                                     </label>
-                                    <a href="#" className="text-xs font-semibold text-primary hover:text-primary-hover hover:underline transition-all">
+                                    <Link to="/forgot-password" className="text-xs font-semibold text-primary hover:text-primary-hover hover:underline transition-all">
                                         Forgot Password?
-                                    </a>
+                                    </Link>
                                 </div>
 
                                 <button

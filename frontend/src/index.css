@@ -73,3 +73,12 @@
 .animate-running-man {
   animation: running-man 0.6s ease-in-out infinite;
 }
+
+/* Safe Area Utilities for Mobile */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.pt-safe {
+  padding-top: env(safe-area-inset-top);
+}

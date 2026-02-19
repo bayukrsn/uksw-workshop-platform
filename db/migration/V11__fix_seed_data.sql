@@ -46,23 +46,23 @@ BEGIN
     -- REGENERATE SEATS with specific layouts for better visual "Design"
     
     -- UI/UX: Quota 35 -> 5x7
-    DELETE FROM seats WHERE workshop_session_id IN (SELECT id FROM workshop_sessions WHERE workshop_id = v_create_id);
-    PERFORM generate_seats_for_session(id, 5, 7) FROM workshop_sessions WHERE workshop_id = v_create_id;
+    -- DELETE FROM seats WHERE workshop_session_id IN (SELECT id FROM workshop_sessions WHERE workshop_id = v_create_id);
+    -- PERFORM generate_seats_for_session(id, 5, 7) FROM workshop_sessions WHERE workshop_id = v_create_id;
 
     -- Leadership: Quota 60 -> 6x10
-    DELETE FROM seats WHERE workshop_session_id IN (SELECT id FROM workshop_sessions WHERE workshop_id = v_lead_id);
-    PERFORM generate_seats_for_session(id, 6, 10) FROM workshop_sessions WHERE workshop_id = v_lead_id;
+    -- DELETE FROM seats WHERE workshop_session_id IN (SELECT id FROM workshop_sessions WHERE workshop_id = v_lead_id);
+    -- PERFORM generate_seats_for_session(id, 6, 10) FROM workshop_sessions WHERE workshop_id = v_lead_id;
 
     -- Tech 1 (Golang): Quota 50 -> 5x10
-    DELETE FROM seats WHERE workshop_session_id IN (SELECT id FROM workshop_sessions WHERE workshop_id = v_tech1_id);
-    PERFORM generate_seats_for_session(id, 5, 10) FROM workshop_sessions WHERE workshop_id = v_tech1_id;
+    -- DELETE FROM seats WHERE workshop_session_id IN (SELECT id FROM workshop_sessions WHERE workshop_id = v_tech1_id);
+    -- PERFORM generate_seats_for_session(id, 5, 10) FROM workshop_sessions WHERE workshop_id = v_tech1_id;
 
     -- Tech 2 (React): Quota 40 -> 5x8
-    DELETE FROM seats WHERE workshop_session_id IN (SELECT id FROM workshop_sessions WHERE workshop_id = v_tech2_id);
-    PERFORM generate_seats_for_session(id, 5, 8) FROM workshop_sessions WHERE workshop_id = v_tech2_id;
+    -- DELETE FROM seats WHERE workshop_session_id IN (SELECT id FROM workshop_sessions WHERE workshop_id = v_tech2_id);
+    -- PERFORM generate_seats_for_session(id, 5, 8) FROM workshop_sessions WHERE workshop_id = v_tech2_id;
 
     -- Biz (Marketing): Quota 45 -> 5x9
-    DELETE FROM seats WHERE workshop_session_id IN (SELECT id FROM workshop_sessions WHERE workshop_id = v_biz_id);
-    PERFORM generate_seats_for_session(id, 5, 9) FROM workshop_sessions WHERE workshop_id = v_biz_id;
+    -- DELETE FROM seats WHERE workshop_session_id IN (SELECT id FROM workshop_sessions WHERE workshop_id = v_biz_id);
+    -- PERFORM generate_seats_for_session(id, 5, 9) FROM workshop_sessions WHERE workshop_id = v_biz_id;
 
 END $$;

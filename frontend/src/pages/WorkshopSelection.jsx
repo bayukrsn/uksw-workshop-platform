@@ -22,6 +22,8 @@ export default function WorkshopSelection() {
     const [selectedSeat, setSelectedSeat] = useState(null)
     const [showSessionExpired, setShowSessionExpired] = useState(false)
     const [creditWarning, setCreditWarning] = useState(null) // { workshopName, workshopCredits, totalAfter }
+    const [showMobileFilters, setShowMobileFilters] = useState(false)
+    const [showMobileCart, setShowMobileCart] = useState(false)
 
     const showNotification = (message, type = 'success') => {
         setNotification({ message, type })
@@ -420,7 +422,22 @@ export default function WorkshopSelection() {
 
             <div className="flex flex-1 overflow-hidden">
                 {/* Left Sidebar - Filters */}
-                <aside className="w-80 flex-shrink-0 bg-background-dark border-r border-border-dark p-6 flex flex-col gap-8 hidden lg:flex overflow-y-auto">
+                {/* Mobile Filter Overlay Background */}
+                {showMobileFilters && (
+                    <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={() => setShowMobileFilters(false)} />
+                )}
+
+                <aside className={`
+                    fixed inset-y-0 left-0 z-50 w-80 bg-background-dark border-r border-border-dark p-6 flex flex-col gap-8 transition-transform duration-300 lg:relative lg:translate-x-0 lg:flex lg:z-auto
+                    ${showMobileFilters ? 'translate-x-0' : '-translate-x-full'}
+                `}>
+                    <div className="flex justify-between items-center lg:hidden">
+                        <h3 className="font-bold text-white text-lg">Filters</h3>
+                        <button onClick={() => setShowMobileFilters(false)} className="text-text-muted hover:text-white">
+                            <span className="material-symbols-outlined">close</span>
+                        </button>
+                    </div>
+
                     {/* Search */}
                     <div className="flex flex-col gap-2">
                         <label className="text-sm font-medium text-text-muted uppercase tracking-wider">Search</label>
@@ -473,6 +490,15 @@ export default function WorkshopSelection() {
                                 Workshop Registration
                             </h1>
                             <p className="text-text-muted text-base">Select workshops for this session</p>
+
+                            {/* Mobile Filter Toggle */}
+                            <button
+                                onClick={() => setShowMobileFilters(true)}
+                                className="lg:hidden mt-2 flex items-center gap-2 self-start px-4 py-2 bg-surface-dark border border-border-dark rounded-lg text-sm font-bold text-primary"
+                            >
+                                <span className="material-symbols-outlined text-[18px]">tune</span>
+                                Filters & Search
+                            </button>
                         </div>
                         <div className="flex items-center gap-4 bg-surface-dark px-4 py-2 rounded-lg border border-border-dark">
                             <div className="flex flex-col items-center px-2">
@@ -509,70 +535,188 @@ export default function WorkshopSelection() {
                     )}
                 </main>
 
-                {/* Right Sidebar - Workshop Preview */}
-                <aside className="fixed lg:relative right-0 top-[65px] lg:top-0 h-[calc(100vh-65px)] w-80 bg-surface-dark border-l border-border-dark flex flex-col shadow-2xl z-40">
-                    <div className="p-6 border-b border-border-dark flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                            <span className="material-symbols-outlined text-primary">assignment_turned_in</span>
-                            <h3 className="text-lg font-bold text-white">My Workshops</h3>
+                {/* Right Sidebar - My Workshops */}
+                <aside className="hidden lg:flex w-96 bg-[#0f0f0f] border-l border-border-dark flex-col z-40 sticky top-0 h-full">
+                    <div className="p-5 border-b border-border-dark">
+                        <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-2">
+                                <div className="w-7 h-7 rounded-lg bg-primary/15 flex items-center justify-center">
+                                    <span className="material-symbols-outlined text-primary text-[18px]">assignment_turned_in</span>
+                                </div>
+                                <h3 className="text-base font-bold text-white">My Selection</h3>
+                            </div>
+                            <span className="text-xs bg-primary/10 text-primary px-2.5 py-1 rounded-full font-bold border border-primary/20">
+                                {myWorkshops.length} {myWorkshops.length === 1 ? 'Workshop' : 'Workshops'}
+                            </span>
                         </div>
-                        <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded font-bold">{myWorkshops.length} Workshops</span>
+                        {/* Credit usage bar */}
+                        <div className="flex justify-between text-[10px] font-bold text-text-muted uppercase tracking-wider mb-1.5">
+                            <span>Credits Used</span>
+                            <span className={totalCredits > maxCredits ? 'text-red-400' : 'text-primary'}>
+                                {totalCredits} / {maxCredits}
+                            </span>
+                        </div>
+                        <div className="w-full h-1.5 bg-border-dark rounded-full overflow-hidden">
+                            <div
+                                className={`h-full rounded-full transition-all duration-500 ${totalCredits > maxCredits ? 'bg-red-500' : 'bg-primary'}`}
+                                style={{ width: `${Math.min((totalCredits / maxCredits) * 100, 100)}%` }}
+                            />
+                        </div>
                     </div>
 
                     <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3 custom-scrollbar">
                         {myWorkshops.map(workshop => (
-                            <div key={workshop.id} className="p-3 rounded-lg bg-background-dark border border-border-dark group hover:border-primary/50 transition-colors">
-                                <div className="flex justify-between items-start mb-1">
-                                    <span className="text-[10px] font-bold text-primary uppercase">{workshop.workshopCode || workshop.courseCode}</span>
-                                    <span className="text-[10px] font-bold text-text-muted">{workshop.credits} Credits</span>
+                            <div key={workshop.id} className="group rounded-xl bg-surface-dark border border-border-dark hover:border-primary/40 transition-all duration-200 overflow-hidden">
+                                {/* Color accent bar */}
+                                <div className="h-1 bg-gradient-to-r from-primary/80 to-yellow-500/40" />
+                                <div className="p-4">
+                                    <div className="flex items-start justify-between gap-2 mb-2">
+                                        <div className="flex-1 min-w-0">
+                                            <span className="text-[9px] font-bold text-primary uppercase tracking-wider">
+                                                {workshop.workshopCode || workshop.courseCode}
+                                            </span>
+                                            <h4 className="text-sm font-bold text-white leading-tight line-clamp-2 mt-0.5">
+                                                {workshop.workshopName || workshop.courseName}
+                                            </h4>
+                                        </div>
+                                        <div className="flex-shrink-0 flex items-center gap-1 bg-primary/10 border border-primary/20 px-2 py-1 rounded-lg">
+                                            <span className="material-symbols-outlined text-primary text-[12px]">school</span>
+                                            <span className="text-primary text-xs font-black">{workshop.credits}</span>
+                                        </div>
+                                    </div>
+
+                                    {/* Mentor */}
+                                    {workshop.mentor && (
+                                        <div className="flex items-center gap-1.5 text-[11px] text-text-muted mb-2">
+                                            <span className="material-symbols-outlined text-[13px]">co_present</span>
+                                            <span className="truncate">{workshop.mentor}</span>
+                                        </div>
+                                    )}
+
+                                    {/* Schedule */}
+                                    {workshop.schedule && (
+                                        <div className="flex items-center gap-1.5 text-[11px] text-text-muted mb-2">
+                                            <span className="material-symbols-outlined text-[13px]">schedule</span>
+                                            <span className="truncate">{workshop.schedule}</span>
+                                        </div>
+                                    )}
+
+                                    {/* Seat */}
+                                    {workshop.seatNumber && (
+                                        <div className="flex items-center gap-1.5 text-[11px] text-primary mb-2">
+                                            <span className="material-symbols-outlined text-[13px]">event_seat</span>
+                                            <span>Seat {workshop.seatNumber}</span>
+                                        </div>
+                                    )}
+
+                                    <button
+                                        onClick={() => handleDropWorkshop(workshop.id, workshop)}
+                                        className="mt-1 text-[10px] text-red-400/70 hover:text-red-400 flex items-center gap-1 uppercase tracking-wider font-bold transition-colors group-hover:text-red-400"
+                                    >
+                                        <span className="material-symbols-outlined text-[13px]">remove_circle</span> Remove
+                                    </button>
                                 </div>
-                                <h4 className="text-sm font-semibold text-white mb-2 line-clamp-1">{workshop.workshopName || workshop.courseName}</h4>
-                                {workshop.seatNumber && (
-                                    <div className="text-[10px] text-primary mb-2">Seat: {workshop.seatNumber}</div>
-                                )}
-                                <button
-                                    onClick={() => handleDropWorkshop(workshop.id, workshop)}
-                                    className="text-[10px] text-red-400 hover:text-red-300 flex items-center gap-1 uppercase tracking-wider font-bold"
-                                >
-                                    <span className="material-symbols-outlined text-xs">close</span> Remove
-                                </button>
                             </div>
                         ))}
 
                         {myWorkshops.length === 0 && (
-                            <div className="border-2 border-dashed border-border-dark rounded-lg p-4 flex flex-col items-center justify-center text-text-muted opacity-40">
-                                <span className="material-symbols-outlined mb-1">add</span>
-                                <span className="text-[10px] uppercase font-bold">Add workshops</span>
+                            <div className="flex flex-col items-center justify-center h-full text-center py-12">
+                                <div className="w-16 h-16 rounded-2xl bg-border-dark/50 flex items-center justify-center mb-3">
+                                    <span className="material-symbols-outlined text-text-muted text-3xl">add_circle</span>
+                                </div>
+                                <p className="text-text-muted text-sm font-semibold">No workshops selected</p>
+                                <p className="text-text-muted/60 text-xs mt-1">Add workshops from the grid</p>
                             </div>
                         )}
                     </div>
 
-                    <div className="p-6 bg-background-dark/50 border-t border-border-dark mt-auto">
-                        <div className="flex justify-between items-center mb-6">
-                            <div>
-                                <p className="text-[10px] uppercase text-text-muted font-bold tracking-widest">Total Credits</p>
-                                <p className="text-2xl font-black text-white">{totalCredits} <span className="text-xs font-medium text-text-muted">/ {maxCredits}</span></p>
+                    <div className="p-4 border-t border-border-dark bg-background-dark/70">
+                        <div className="grid grid-cols-2 gap-2 mb-4">
+                            <div className="bg-surface-dark border border-border-dark rounded-lg p-3">
+                                <p className="text-[10px] uppercase text-text-muted font-bold tracking-widest mb-0.5">Workshops</p>
+                                <p className="text-xl font-black text-white">{myWorkshops.length}</p>
+                            </div>
+                            <div className="bg-surface-dark border border-border-dark rounded-lg p-3">
+                                <p className="text-[10px] uppercase text-text-muted font-bold tracking-widest mb-0.5">Credits</p>
+                                <p className={`text-xl font-black ${totalCredits > maxCredits ? 'text-red-400' : 'text-primary'}`}>{totalCredits}</p>
                             </div>
                         </div>
                         <button
                             onClick={handleFinish}
                             disabled={myWorkshops.length === 0}
-                            className="w-full bg-cream-gold hover:bg-[#EBC44F] text-background-dark font-black py-4 rounded-lg flex items-center justify-center gap-2 shadow-lg shadow-cream-gold/10 transition-all active:scale-[0.98] disabled:opacity-50"
+                            className="w-full bg-primary hover:bg-yellow-400 text-background-dark font-black py-3.5 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-primary/20 transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-sm"
                         >
-                            <span className="material-symbols-outlined font-bold">description</span>
-                            DETAIL MY WORKSHOP
+                            <span className="material-symbols-outlined font-bold text-[18px]">description</span>
+                            CONFIRM SELECTION
                         </button>
-                        <p className="text-[10px] text-center text-text-muted/60 mt-4 leading-relaxed">
-                            By submitting, you agree to the workshop terms and schedules.
+                        <p className="text-[10px] text-center text-text-muted/50 mt-3 leading-relaxed">
+                            By confirming, you agree to the workshop terms.
                         </p>
                     </div>
                 </aside>
             </div>
 
+            {/* Mobile Cart Overlay Modal */}
+            {showMobileCart && (
+                <div className="fixed inset-0 z-50 lg:hidden flex flex-col justify-end sm:justify-center bg-black/80 backdrop-blur-sm animate-in fade-in" onClick={() => setShowMobileCart(false)}>
+                    <div className="bg-surface-dark w-full sm:max-w-md sm:rounded-xl sm:mx-4 border-t sm:border border-border-dark shadow-2xl animate-in slide-in-from-bottom" onClick={e => e.stopPropagation()}>
+                        <div className="p-4 border-b border-border-dark flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                                <span className="material-symbols-outlined text-primary">assignment_turned_in</span>
+                                <h3 className="text-lg font-bold text-white">My Workshops</h3>
+                            </div>
+                            <button onClick={() => setShowMobileCart(false)} className="text-text-muted hover:text-white">
+                                <span className="material-symbols-outlined">close</span>
+                            </button>
+                        </div>
+
+                        <div className="max-h-[60vh] overflow-y-auto p-4 flex flex-col gap-3 custom-scrollbar">
+                            {myWorkshops.map(workshop => (
+                                <div key={workshop.id} className="p-3 rounded-lg bg-background-dark border border-border-dark">
+                                    <div className="flex justify-between items-start mb-1">
+                                        <span className="text-[10px] font-bold text-primary uppercase">{workshop.workshopCode || workshop.courseCode}</span>
+                                        <span className="text-[10px] font-bold text-text-muted">{workshop.credits} Credits</span>
+                                    </div>
+                                    <h4 className="text-sm font-semibold text-white mb-2">{workshop.workshopName || workshop.courseName}</h4>
+                                    {workshop.seatNumber && (
+                                        <div className="text-[10px] text-primary mb-2">Seat: {workshop.seatNumber}</div>
+                                    )}
+                                    <button
+                                        onClick={() => handleDropWorkshop(workshop.id, workshop)}
+                                        className="text-[10px] text-red-400 hover:text-red-300 flex items-center gap-1 uppercase tracking-wider font-bold"
+                                    >
+                                        <span className="material-symbols-outlined text-xs">close</span> Remove
+                                    </button>
+                                </div>
+                            ))}
+
+                            {myWorkshops.length === 0 && (
+                                <div className="text-center py-8 text-text-muted opacity-60">
+                                    <p>No workshops selected yet.</p>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="p-4 bg-background-dark/50 border-t border-border-dark">
+                            <button
+                                onClick={handleFinish}
+                                disabled={myWorkshops.length === 0}
+                                className="w-full bg-cream-gold text-background-dark font-bold py-3 rounded-lg disabled:opacity-50"
+                            >
+                                Submit Registration
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Mobile Bottom Bar */}
-            <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-surface-dark border-t border-border-dark p-4 flex items-center justify-between z-50">
-                <div className="flex flex-col">
-                    <span className="text-[10px] uppercase text-text-muted font-bold">Selected</span>
+            <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-surface-dark border-t border-border-dark p-4 flex items-center justify-between z-50 pb-safe">
+                <div className="flex flex-col cursor-pointer" onClick={() => setShowMobileCart(true)}>
+                    <div className="flex items-center gap-1">
+                        <span className="text-[10px] uppercase text-text-muted font-bold">Selected</span>
+                        <span className="material-symbols-outlined text-[14px] text-primary">expand_less</span>
+                    </div>
                     <span className="text-primary font-bold">{totalCredits} Credits ({myWorkshops.length} Workshops)</span>
                 </div>
                 <button
@@ -650,6 +794,13 @@ function WorkshopCard({ workshop, onAdd, onDrop }) {
                 </div>
 
                 <div className="flex flex-col gap-2 mt-1">
+                    {/* Mentor Name */}
+                    {workshop.mentor && (
+                        <div className={`flex items-center gap-3 text-sm ${isEnrolled ? 'text-white' : 'text-text-muted'}`}>
+                            <span className={`material-symbols-outlined text-[18px] ${isEnrolled ? 'text-primary' : ''}`}>co_present</span>
+                            <span>{workshop.mentor}</span>
+                        </div>
+                    )}
                     <div className={`flex items-center gap-3 text-sm ${isEnrolled ? 'text-white' : 'text-text-muted'}`}>
                         <span className={`material-symbols-outlined text-[18px] ${isEnrolled ? 'text-primary' : ''}`}>schedule</span>
                         <span>{workshop.schedule || 'TBD'}</span>

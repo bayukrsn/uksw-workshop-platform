@@ -171,7 +171,7 @@ export default function SeatMap({ workshopSessionId, onSeatSelected, readOnly = 
                 </h3>
 
                 {/* Legend */}
-                <div className="flex gap-4 justify-center text-sm mb-6">
+                <div className="flex gap-4 justify-center text-sm mb-6 flex-wrap">
                     <div className="flex items-center gap-2">
                         <div className="w-8 h-8 rounded bg-green-500 border border-green-600"></div>
                         <span className="text-text-muted">Available</span>
@@ -207,10 +207,10 @@ export default function SeatMap({ workshopSessionId, onSeatSelected, readOnly = 
             </div>
 
             {/* Seat Grid */}
-            <div className="seat-grid space-y-3">
+            <div className="seat-grid space-y-3 overflow-x-auto pb-4">
                 {sortedRows.map(rowLetter => (
-                    <div key={rowLetter} className="seat-row flex items-center gap-2">
-                        <span className="row-label w-8 text-center font-bold text-primary">
+                    <div key={rowLetter} className="seat-row flex items-center gap-2 min-w-max mx-auto">
+                        <span className="row-label w-8 text-center font-bold text-primary sticky left-0 z-10 bg-surface-dark">
                             {rowLetter}
                         </span>
                         <div className="seats flex gap-2 flex-1 justify-center">

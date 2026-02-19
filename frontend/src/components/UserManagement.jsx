@@ -6,22 +6,64 @@ import LoadingSpinner from '../components/LoadingSpinner'
 function UserManagement() {
     const [users, setUsers] = useState([])
     const [students, setStudents] = useState([])
+    const [passwordResets, setPasswordResets] = useState([])
     const [isLoading, setIsLoading] = useState(true)
     const [activeSubTab, setActiveSubTab] = useState('users')
     const [filterStatus, setFilterStatus] = useState('all')
+    const [resetFilterStatus, setResetFilterStatus] = useState('PENDING')
     const [searchQuery, setSearchQuery] = useState('')
     const [confirmAction, setConfirmAction] = useState(null)
     const [editingCredit, setEditingCredit] = useState(null)
     const [creditSaving, setCreditSaving] = useState(null)
     const [expandedStudent, setExpandedStudent] = useState(null)
+    const [resetActionLoading, setResetActionLoading] = useState(null)
 
     useEffect(() => {
         if (activeSubTab === 'users') {
             loadUsers()
         } else if (activeSubTab === 'credits') {
             loadStudents()
+        } else if (activeSubTab === 'resets') {
+            loadPasswordResets()
         }
-    }, [filterStatus, activeSubTab])
+    }, [filterStatus, activeSubTab, resetFilterStatus])
+
+    const loadPasswordResets = async () => {
+        setIsLoading(true)
+        try {
+            const response = await api.getPasswordResetRequests(resetFilterStatus)
+            setPasswordResets(response.requests || [])
+        } catch (err) {
+            console.error('Failed to load password resets:', err)
+        } finally {
+            setIsLoading(false)
+        }
+    }
+
+    const handleApproveReset = async (requestId) => {
+        setResetActionLoading(requestId + '_approve')
+        try {
+            await api.approvePasswordReset(requestId)
+            loadPasswordResets()
+        } catch (err) {
+            alert(err.message || 'Failed to approve reset')
+        } finally {
+            setResetActionLoading(null)
+        }
+    }
+
+    const handleRejectReset = async (requestId) => {
+        setResetActionLoading(requestId + '_reject')
+        try {
+            await api.rejectPasswordReset(requestId)
+            loadPasswordResets()
+        } catch (err) {
+            alert(err.message || 'Failed to reject reset')
+        } finally {
+            setResetActionLoading(null)
+        }
+    }
+
 
     const loadUsers = async () => {
         setIsLoading(true)
@@ -137,6 +179,16 @@ function UserManagement() {
                     <span className="material-symbols-outlined text-[18px]">school</span>
                     Student Credits
                 </button>
+                <button
+                    onClick={() => { setActiveSubTab('resets'); setSearchQuery('') }}
+                    className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-bold transition-all ${activeSubTab === 'resets'
+                        ? 'bg-primary text-background-dark shadow-lg shadow-primary/20'
+                        : 'text-text-muted hover:text-white'
+                        }`}
+                >
+                    <span className="material-symbols-outlined text-[18px]">lock_reset</span>
+                    Password Resets
+                </button>
             </div>
 
             {activeSubTab === 'users' ? (
@@ -202,7 +254,7 @@ function UserManagement() {
                         )}
                     </div>
                 </>
-            ) : (
+            ) : activeSubTab === 'credits' ? (
                 <>
                     {/* Student Credits Tab */}
                     <div className="relative w-full max-w-md">
@@ -329,7 +381,102 @@ function UserManagement() {
                         )}
                     </div>
                 </>
-            )}
+            ) : activeSubTab === 'resets' ? (
+                <>
+                    {/* Filter Tabs for reset status */}
+                    <div className="flex items-center gap-2 border-b border-border-dark">
+                        {['PENDING', 'APPROVED', 'REJECTED', 'all'].map(s => (
+                            <button
+                                key={s}
+                                onClick={() => setResetFilterStatus(s)}
+                                className={`px-4 py-2 text-sm font-bold transition-colors border-b-2 capitalize ${resetFilterStatus === s
+                                    ? 'border-primary text-primary'
+                                    : 'border-transparent text-text-muted hover:text-white'
+                                    }`}
+                            >
+                                {s === 'all' ? 'All Requests' : s.charAt(0) + s.slice(1).toLowerCase()}
+                            </button>
+                        ))}
+                    </div>
+
+                    <div className="bg-surface-dark rounded-xl border border-border-dark overflow-hidden">
+                        {isLoading ? (
+                            <div className="p-12 text-center"><LoadingSpinner size="md" text="Loading requests..." /></div>
+                        ) : passwordResets.length > 0 ? (
+                            <div className="overflow-x-auto">
+                                <table className="w-full">
+                                    <thead className="bg-[#1d1b14] border-b border-border-dark">
+                                        <tr>
+                                            <th className="px-6 py-3 text-left text-xs font-bold text-text-muted uppercase tracking-wider">Student</th>
+                                            <th className="px-6 py-3 text-left text-xs font-bold text-text-muted uppercase tracking-wider">NIM</th>
+                                            <th className="px-6 py-3 text-left text-xs font-bold text-text-muted uppercase tracking-wider">Email</th>
+                                            <th className="px-6 py-3 text-left text-xs font-bold text-text-muted uppercase tracking-wider">Submitted</th>
+                                            <th className="px-6 py-3 text-left text-xs font-bold text-text-muted uppercase tracking-wider">Status</th>
+                                            <th className="px-6 py-3 text-left text-xs font-bold text-text-muted uppercase tracking-wider">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-border-dark">
+                                        {passwordResets.map((req) => (
+                                            <tr key={req.id} className="hover:bg-white/5 transition-colors">
+                                                <td className="px-6 py-4">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="w-9 h-9 rounded-full bg-orange-500/10 border border-orange-500/20 flex items-center justify-center text-orange-400 text-xs font-bold">
+                                                            {req.userName?.charAt(0)}
+                                                        </div>
+                                                        <span className="text-white text-sm font-medium">{req.userName}</span>
+                                                    </div>
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <span className="px-2 py-0.5 bg-primary/10 text-primary text-xs font-bold rounded border border-primary/20">{req.userNim}</span>
+                                                </td>
+                                                <td className="px-6 py-4 text-text-muted text-sm">{req.userEmail}</td>
+                                                <td className="px-6 py-4 text-text-muted text-sm">
+                                                    {new Date(req.createdAt).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    {req.status === 'PENDING' && <span className="px-2 py-0.5 bg-yellow-500/20 text-yellow-400 text-xs font-bold rounded border border-yellow-500/30">Pending</span>}
+                                                    {req.status === 'APPROVED' && <span className="px-2 py-0.5 bg-green-500/20 text-green-400 text-xs font-bold rounded border border-green-500/30">Approved</span>}
+                                                    {req.status === 'REJECTED' && <span className="px-2 py-0.5 bg-red-500/20 text-red-400 text-xs font-bold rounded border border-red-500/30">Rejected</span>}
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    {req.status === 'PENDING' && (
+                                                        <div className="flex items-center gap-2">
+                                                            <button
+                                                                onClick={() => handleApproveReset(req.id)}
+                                                                disabled={resetActionLoading !== null}
+                                                                className="px-3 py-1 bg-green-500/20 border border-green-500/50 text-green-400 text-xs font-bold rounded hover:bg-green-500/30 transition-colors disabled:opacity-50 flex items-center gap-1"
+                                                            >
+                                                                <span className="material-symbols-outlined text-[14px]">check</span>
+                                                                {resetActionLoading === req.id + '_approve' ? 'Approving...' : 'Approve'}
+                                                            </button>
+                                                            <button
+                                                                onClick={() => handleRejectReset(req.id)}
+                                                                disabled={resetActionLoading !== null}
+                                                                className="px-3 py-1 bg-red-500/20 border border-red-500/50 text-red-400 text-xs font-bold rounded hover:bg-red-500/30 transition-colors disabled:opacity-50 flex items-center gap-1"
+                                                            >
+                                                                <span className="material-symbols-outlined text-[14px]">close</span>
+                                                                {resetActionLoading === req.id + '_reject' ? 'Rejecting...' : 'Reject'}
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                    {req.status !== 'PENDING' && (
+                                                        <span className="text-text-muted text-xs">No actions available</span>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        ) : (
+                            <div className="p-12 text-center text-text-muted">
+                                <span className="material-symbols-outlined text-4xl mb-2 block">lock_reset</span>
+                                No password reset requests found.
+                            </div>
+                        )}
+                    </div>
+                </>
+            ) : null}
 
 
 

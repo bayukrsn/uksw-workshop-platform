@@ -7,6 +7,8 @@ import Queue from './pages/Queue'
 import WorkshopSelection from './pages/WorkshopSelection'
 import RegistrationSuccess from './pages/RegistrationSuccess'
 import MentorDashboard from './pages/MentorDashboard'
+import EnrollmentHistory from './pages/EnrollmentHistory'
+import ForgotPassword from './pages/ForgotPassword'
 
 import LoadingSpinner from './components/LoadingSpinner'
 
@@ -38,6 +40,7 @@ export default function App() {
         <Routes>
             <Route path="/" element={<Login />} />
             <Route path="/register" element={<Register />} />
+            <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route
                 path="/welcome"
                 element={
@@ -75,6 +78,14 @@ export default function App() {
                 element={
                     <ProtectedRoute allowedRoles={['STUDENT']}>
                         <RegistrationSuccess />
+                    </ProtectedRoute>
+                }
+            />
+            <Route
+                path="/history"
+                element={
+                    <ProtectedRoute allowedRoles={['STUDENT']}>
+                        <EnrollmentHistory />
                     </ProtectedRoute>
                 }
             />

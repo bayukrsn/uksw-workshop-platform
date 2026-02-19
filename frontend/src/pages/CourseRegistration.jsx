@@ -16,6 +16,7 @@ export default function CourseRegistration() {
     const [selectedSemester, setSelectedSemester] = useState('all')
     const [notification, setNotification] = useState(null)
     const [dropId, setDropId] = useState(null)
+    const [showMobileFilters, setShowMobileFilters] = useState(false)
 
     const showNotification = (message, type = 'success') => {
         setNotification({ message, type })
@@ -196,7 +197,23 @@ export default function CourseRegistration() {
 
             <div className="flex flex-1 overflow-hidden">
                 {/* Left Sidebar - Filters */}
-                <aside className="w-80 flex-shrink-0 bg-background-dark border-r border-border-dark p-6 flex flex-col gap-8 hidden lg:flex overflow-y-auto">
+                {/* Left Sidebar - Filters */}
+                {/* Mobile Filter Overlay Background */}
+                {showMobileFilters && (
+                    <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={() => setShowMobileFilters(false)} />
+                )}
+
+                <aside className={`
+                    fixed inset-y-0 left-0 z-50 w-80 bg-background-dark border-r border-border-dark p-6 flex flex-col gap-8 transition-transform duration-300 lg:relative lg:translate-x-0 lg:flex lg:z-auto
+                    ${showMobileFilters ? 'translate-x-0' : '-translate-x-full'}
+                `}>
+                    <div className="flex justify-between items-center lg:hidden">
+                        <h3 className="font-bold text-white text-lg">Filters</h3>
+                        <button onClick={() => setShowMobileFilters(false)} className="text-text-muted hover:text-white">
+                            <span className="material-symbols-outlined">close</span>
+                        </button>
+                    </div>
+
                     {/* Search */}
                     <div className="flex flex-col gap-2">
                         <label className="text-sm font-medium text-text-muted uppercase tracking-wider">Search</label>
@@ -249,6 +266,15 @@ export default function CourseRegistration() {
                                 Course Registration (KRS)
                             </h1>
                             <p className="text-text-muted text-base">Select courses for Semester Gasal (Odd)</p>
+
+                            {/* Mobile Filter Toggle */}
+                            <button
+                                onClick={() => setShowMobileFilters(true)}
+                                className="lg:hidden mt-2 flex items-center gap-2 self-start px-4 py-2 bg-surface-dark border border-border-dark rounded-lg text-sm font-bold text-primary"
+                            >
+                                <span className="material-symbols-outlined text-[18px]">tune</span>
+                                Filters & Search
+                            </button>
                         </div>
                         <div className="flex items-center gap-4 bg-surface-dark px-4 py-2 rounded-lg border border-border-dark">
                             <div className="flex flex-col items-center px-2">
@@ -286,7 +312,7 @@ export default function CourseRegistration() {
                 </main>
 
                 {/* Right Sidebar - KRS Preview */}
-                <aside className="fixed lg:relative right-0 top-[65px] lg:top-0 h-[calc(100vh-65px)] w-80 bg-surface-dark border-l border-border-dark flex flex-col shadow-2xl z-40">
+                <aside className="hidden lg:flex lg:flex-col fixed lg:relative right-0 top-[65px] lg:top-0 h-[calc(100vh-65px)] lg:h-auto w-80 bg-surface-dark border-l border-border-dark shadow-2xl z-40">
                     <div className="p-6 border-b border-border-dark flex items-center justify-between">
                         <div className="flex items-center gap-2">
                             <span className="material-symbols-outlined text-primary">assignment_turned_in</span>

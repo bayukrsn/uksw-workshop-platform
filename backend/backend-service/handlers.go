@@ -133,7 +133,7 @@ func handleJoinQueue(c *gin.Context) {
 			"success":              true,
 			"queuePosition":        0,
 			"estimatedWaitMinutes": 0,
-			"timestamp":            getCurrentTimestamp(),
+			"timestamp":            GetCurrentTimestamp(),
 			"message":              "Mentors skip the queue",
 		})
 		return
@@ -153,7 +153,7 @@ func handleJoinQueue(c *gin.Context) {
 		"success":              true,
 		"queuePosition":        position,
 		"estimatedWaitMinutes": eta,
-		"timestamp":            getCurrentTimestamp(),
+		"timestamp":            GetCurrentTimestamp(),
 	})
 }
 
@@ -169,7 +169,7 @@ func handleQueueStatus(c *gin.Context) {
 			"position":             0,
 			"status":               "ACTIVE",
 			"estimatedWaitMinutes": 0,
-			"timestamp":            getCurrentTimestamp(),
+			"timestamp":            GetCurrentTimestamp(),
 		})
 		return
 	}
@@ -208,7 +208,7 @@ func handleQueueMetrics(c *gin.Context) {
 		"waitingUsers": waitingCount,
 		"totalUsers":   activeCount + waitingCount,
 		"limit":        limit,
-		"timestamp":    getCurrentTimestamp(),
+		"timestamp":    GetCurrentTimestamp(),
 	})
 }
 
@@ -230,7 +230,7 @@ func handleHeartbeat(c *gin.Context) {
 		"success":          true,
 		"message":          "Session active",
 		"remainingSeconds": ttl,
-		"timestamp":        getCurrentTimestamp(),
+		"timestamp":        GetCurrentTimestamp(),
 	})
 }
 
@@ -461,6 +461,76 @@ func handleGetMyWorkshops(c *gin.Context) {
 	})
 }
 
+func handleRateWorkshop(c *gin.Context) {
+	enrollmentId := c.Param("id")
+	userId, _ := c.Get("userId")
+
+	var req struct {
+		Rating int    `json:"rating" binding:"required,min=1,max=5"`
+		Review string `json:"review"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "INVALID_REQUEST",
+			"message": err.Error(),
+		})
+		return
+	}
+
+	err := RateWorkshop(c.Request.Context(), userId.(string), enrollmentId, req.Rating, req.Review)
+	if err != nil {
+		status := http.StatusInternalServerError
+		errorPayload := gin.H{
+			"success": false,
+			"error":   "RATING_FAILED",
+			"message": err.Error(),
+		}
+
+		if err.Error() == "WORKSHOP_NOT_STARTED_YET" || err.Error() == "WORKSHOP_NOT_YET_COMPLETED" {
+			status = http.StatusConflict
+			errorPayload["error"] = "NOT_COMPLETED"
+			errorPayload["message"] = "You can only rate workshops after they are completed."
+		} else if err.Error() == "ENROLLMENT_NOT_FOUND" {
+			status = http.StatusNotFound
+			errorPayload["error"] = "NOT_FOUND"
+			errorPayload["message"] = "Enrollment not found."
+		}
+
+		c.JSON(status, errorPayload)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "Workshop rated successfully",
+	})
+}
+
+func handleGetEnrollmentHistory(c *gin.Context) {
+	userId, _ := c.Get("userId")
+
+	history, err := GetStudentEnrollmentHistory(c.Request.Context(), userId.(string))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   "FETCH_FAILED",
+			"message": err.Error(),
+		})
+		return
+	}
+
+	if history == nil {
+		history = []Enrollment{}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"history": history,
+	})
+}
+
 // Mentor Handlers
 func handleGetMentorWorkshops(c *gin.Context) {
 	userId, _ := c.Get("userId")
@@ -660,4 +730,107 @@ func handleUpdateStudentCreditLimit(c *gin.Context) {
 		"success": true,
 		"message": "Credit limit updated successfully",
 	})
+}
+
+// handleGetMentorFeedback returns aggregated student feedback for all of this mentor's workshops
+func handleGetMentorFeedback(c *gin.Context) {
+	mentorUserId, exists := c.Get("userId")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"success": false, "error": "UNAUTHORIZED",
+		})
+		return
+	}
+
+	summary, err := GetMentorFeedbackSummary(c.Request.Context(), mentorUserId.(string))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   "FETCH_FAILED",
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success":        true,
+		"totalRatings":   summary.TotalRatings,
+		"overallAverage": summary.OverallAvg,
+		"workshops":      summary.Workshops,
+	})
+}
+
+// ─── Password Reset Handlers ─────────────────────────────────────────────────
+
+func handleRequestPasswordReset(c *gin.Context) {
+	var req struct {
+		NIM         string `json:"nim" binding:"required"`
+		Email       string `json:"email" binding:"required"`
+		NewPassword string `json:"newPassword" binding:"required,min=6"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "INVALID_REQUEST", "message": err.Error()})
+		return
+	}
+
+	err := RequestPasswordReset(c.Request.Context(), req.NIM, req.Email, req.NewPassword)
+	if err != nil {
+		if err.Error() == "USER_NOT_FOUND" {
+			c.JSON(http.StatusNotFound, gin.H{"success": false, "error": "USER_NOT_FOUND", "message": "No account found with that NIM and email combination."})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "RESET_FAILED", "message": err.Error()})
+		}
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "Password reset request submitted. Please wait for mentor approval."})
+}
+
+func handleGetPasswordResetRequests(c *gin.Context) {
+	status := c.DefaultQuery("status", "PENDING")
+	requests, err := GetPasswordResetRequests(c.Request.Context(), status)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "FETCH_FAILED", "message": err.Error()})
+		return
+	}
+	if requests == nil {
+		requests = []PasswordResetRequest{}
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "requests": requests, "count": len(requests)})
+}
+
+func handleApprovePasswordReset(c *gin.Context) {
+	requestID := c.Param("id")
+	if requestID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "INVALID_REQUEST", "message": "Request ID is required"})
+		return
+	}
+	err := ApprovePasswordReset(c.Request.Context(), requestID)
+	if err != nil {
+		if err.Error() == "REQUEST_NOT_FOUND" {
+			c.JSON(http.StatusNotFound, gin.H{"success": false, "error": "NOT_FOUND", "message": "Reset request not found or already processed."})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "APPROVE_FAILED", "message": err.Error()})
+		}
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "Password updated successfully."})
+}
+
+func handleRejectPasswordReset(c *gin.Context) {
+	requestID := c.Param("id")
+	if requestID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "INVALID_REQUEST", "message": "Request ID is required"})
+		return
+	}
+	err := RejectPasswordReset(c.Request.Context(), requestID)
+	if err != nil {
+		if err.Error() == "REQUEST_NOT_FOUND" {
+			c.JSON(http.StatusNotFound, gin.H{"success": false, "error": "NOT_FOUND", "message": "Reset request not found or already processed."})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "REJECT_FAILED", "message": err.Error()})
+		}
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "Password reset request rejected."})
 }

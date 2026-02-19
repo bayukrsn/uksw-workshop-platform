@@ -14,8 +14,8 @@ export default function Queue() {
     const pollInterval = useRef(null)
 
     useEffect(() => {
-        // Initial queue join
-        joinQueue()
+        // Initial check: Check status first (don't join immediately to prevent resetting position)
+        checkQueueStatus()
 
         // REAL-TIME AUTO-PROMOTION: WebSocket
         if (!wsConnected.current) {
@@ -186,7 +186,7 @@ export default function Queue() {
                                                 stroke="currentColor" className="text-primary" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
                                         </svg>
                                     </div>
-                                    <div className="text-7xl sm:text-8xl md:text-9xl font-bold text-primary tracking-tighter drop-shadow-sm">
+                                    <div className="text-6xl sm:text-7xl md:text-8xl lg:text-9xl font-bold text-primary tracking-tighter drop-shadow-sm">
                                         #{position}
                                     </div>
                                 </div>
