@@ -2,7 +2,7 @@
 
 > Sistem Pendaftaran Workshop Interaktif - Universitas Kristen Satya Wacana
 
-**Versi 3.0 • Februari 2026**
+**Versi 2.0.0 • Februari 2026**
 
 ---
 
@@ -46,6 +46,12 @@
 | ⏰ Auto-Cleanup | Background workers untuk expired slots, expired seat reservations, dan past workshops |
 | 📈 Observability | Distributed tracing dengan Jaeger & OpenTelemetry |
 | 🔐 Single Session Auth | JWT auth dengan single-session enforcement via Redis |
+| 🤖 AI Workshop Insights | AI-powered workshop suggestions via HuggingFace (Llama 3.1), Redis-cached 7 hari, berbasis feedback 5 workshop terakhir |
+| 🔑 Password Reset | Self-service forgot password dengan approval workflow oleh mentor (PENDING → APPROVED/REJECTED) |
+| ⭐ Rating & Review | Mahasiswa dapat memberi rating (1–5 bintang) dan review tertulis setelah workshop selesai |
+| 📜 Enrollment History | Halaman riwayat pendaftaran workshop lengkap dengan status dan rating |
+| 📊 Mentor Feedback Dashboard | Agregasi rating & review mahasiswa per workshop dengan overall average |
+| 🔔 Notification Bell | Real-time notification bell di header untuk WebSocket events |
 
 ---
 
@@ -56,11 +62,13 @@
 | **Frontend** | React + Vite | - | SPA dengan Tailwind CSS, hot-reload dev server |
 | **Backend** | Go + Gin | 1.x | REST API gateway, WebSocket hub, background workers |
 | **Database** | PostgreSQL | 15 | Relational database utama, UUID primary keys |
-| **Cache** | Redis | 7 | Distributed locks, session management, queue state |
+| **Cache** | Redis | 7 | Distributed locks, session management, queue state, AI cache |
 | **Message Broker** | Apache Kafka | 7.5 | FIFO queue untuk WAR MODE, Zookeeper-managed |
-| **Migration** | Flyway | 10 | Database schema versioning (12 migration files) |
+| **AI Service** | HuggingFace Inference API | - | Llama 3.1 8B-Instruct untuk AI workshop suggestions |
+| **Migration** | Flyway | 10 | Database schema versioning (17 migration files) |
 | **Observability** | Jaeger | latest | Distributed tracing via OTLP |
-| **Containerization** | Docker Compose | 3.8 | 7 services: postgres, flyway, redis, zookeeper, kafka, backend, frontend, jaeger |
+| **Public Access** | Ngrok | latest | Tunneling untuk public access |
+| **Containerization** | Docker Compose | 3.8 | 9 services: postgres, flyway, redis, zookeeper, kafka, backend, frontend, jaeger, ngrok |
 
 ---
 
@@ -89,12 +97,21 @@ flowchart LR
         UC10["📊 Manage Credit Limits"]
         UC11["📋 View Enrolled Students"]
         UC12["🗓️ Set Registration Dates"]
+        UC13["⭐ Rate Workshop"]
+        UC14["📜 View History"]
+        UC15["🔑 Forgot Password"]
+        UC16["🤖 AI Insights"]
+        UC17["📊 View Feedback"]
+        UC18["🔑 Manage Password Resets"]
     end
     
     S --> UC1
     S --> UC2
     S --> UC3
     S --> UC4
+    S --> UC13
+    S --> UC14
+    S --> UC15
     
     M --> UC1
     M --> UC5
@@ -104,13 +121,16 @@ flowchart LR
     M --> UC10
     M --> UC11
     M --> UC12
+    M --> UC16
+    M --> UC17
+    M --> UC18
     
     T --> UC8
 ```
 
 **Penjelasan:**
-- **Mahasiswa**: Dapat register/login, bergabung ke antrian (WAR MODE), memilih kursi di seat map, dan mendaftar workshop.
-- **Mentor**: Dapat mengelola workshop (CRUD), memonitor trafik antrian (active/waiting users), menyetujui/menolak pendaftaran user, melihat jadwal kalender, mengelola batas kredit mahasiswa, dan mengatur tanggal registrasi.
+- **Mahasiswa**: Dapat register/login, bergabung ke antrian (WAR MODE), memilih kursi di seat map, mendaftar workshop, memberi rating & review, melihat riwayat pendaftaran, dan reset password.
+- **Mentor**: Dapat mengelola workshop (CRUD), memonitor trafik antrian, menyetujui/menolak user & password reset, melihat jadwal kalender, mengelola batas kredit, melihat feedback mahasiswa, dan menggunakan AI insights.
 - **System Timer**: Background workers yang membersihkan slot expired, seat reservations expired, dan menandai workshop lampau sebagai "done".
 
 ---
@@ -392,6 +412,9 @@ flowchart TB
         SEAT["Seat Service\n(Distributed Locking)"]
         USRMGMT["User Management\n(Approval Workflow)"]
         CREDIT["Credit Limit\nService"]
+        AI["AI Suggestions\n(HuggingFace + Redis Cache)"]
+        RATING["Rating & Feedback\nService"]
+        PWRESET["Password Reset\nService"]
         WORKERS["Background Workers:\n• Slot Cleanup\n• Seat Expiry\n• Past Workshop Checker"]
     end
     
@@ -419,6 +442,9 @@ flowchart TB
     API --> SEAT
     API --> USRMGMT
     API --> CREDIT
+    API --> AI
+    API --> RATING
+    API --> PWRESET
     
     QUEUE -->|"Produce"| KAFKA
     KAFKA -->|"Consume"| QUEUE
@@ -434,15 +460,23 @@ flowchart TB
     WORKERS --> REDIS
     WORKERS --> PG
     
+    AI --> REDIS
+    AI -->|"HuggingFace API"| HF["HuggingFace\nInference API"]
+    RATING --> PG
+    PWRESET --> PG
+    
     API -.->|"OTLP"| JAEGER
 ```
 
 **Penjelasan:**
-- **Frontend**: SPA React dengan 8 halaman dan 6 komponen reusable. Berkomunikasi via REST dan WebSocket.
-- **API Gateway**: Entry point untuk semua request. Terintegrasi dengan Auth, Queue, Seat, User Management, dan Credit services.
+- **Frontend**: SPA React dengan 10 halaman dan 9 komponen reusable. Berkomunikasi via REST dan WebSocket.
+- **API Gateway**: Entry point untuk semua request. Terintegrasi dengan Auth, Queue, Seat, User Management, Credit, AI, Rating, dan Password Reset services.
 - **WebSocket Hub**: Mengelola koneksi real-time per user, mendukung broadcast dan targeted messages.
+- **AI Suggestions**: Memanggil HuggingFace Inference API (Llama 3.1), cache hasil di Redis selama 7 hari.
+- **Rating & Feedback**: Mahasiswa beri rating/review → mentor lihat aggregate feedback per workshop.
+- **Password Reset**: Self-service forgot password dengan approval oleh mentor.
 - **Kafka**: Message broker untuk antrian FIFO yang fair dan fault-tolerant (WAR MODE).
-- **Redis**: In-memory store untuk distributed locks, session management, dan queue state.
+- **Redis**: In-memory store untuk distributed locks, session management, queue state, dan AI suggestion cache.
 - **Background Workers**: 3 goroutines: slot cleanup (tiap 30s), seat expiry check, dan past workshop auto-done (tiap 1 jam).
 - **Jaeger**: Distributed tracing untuk debugging dan monitoring performa.
 
@@ -659,14 +693,16 @@ flowchart TD
     M_TAB -->|Workshops| M_WORKSHOPS[Manage Workshops\nCreate/Edit/View Students]
     M_TAB -->|Schedule| M_SCHEDULE[View Calendar\nWeekly Schedule]
     M_TAB -->|Traffic| M_TRAFFIC[Monitor Traffic\nActive & Waiting Users]
-    M_TAB -->|Users| M_USERS[User Management\nApprove/Reject/Credit Limits]
+    M_TAB -->|Users| M_USERS[User Management\nApprove/Reject/Credit Limits\nPassword Resets]
+    M_TAB -->|Feedback| M_FEEDBACK[View Student Ratings\n& Reviews]
+    M_TAB -->|AI Insights| M_AI[AI Workshop Suggestions\nCache-first + Force Refresh]
 ```
 
 **Penjelasan:**
 - **Registration Flow**: User harus register → menunggu approval → login → join queue → pilih workshop → pilih kursi → konfirmasi.
 - **WAR MODE**: Jika slot penuh, user masuk Kafka queue dan menunggu notifikasi WebSocket.
 - **Validation**: Sistem memvalidasi credit limit, schedule conflicts, dan registration windows sebelum enrollment.
-- **Mentor Dashboard**: 4 tab utama - Workshops, Schedule, Traffic Control, dan User Management.
+- **Mentor Dashboard**: 6 tab utama - Workshops, Schedule, Traffic Control, User Management, Feedback, dan AI Insights.
 
 ---
 
@@ -845,6 +881,7 @@ flowchart TD
 | `POST` | `/api/auth/login` | Login dengan NIM/NIDN, password, dan role. Returns JWT token | ❌ |
 | `POST` | `/api/auth/logout` | Logout dan invalidate session di Redis | ✅ |
 | `POST` | `/api/register` | Register akun baru (STUDENT/MENTOR) | ❌ |
+| `POST` | `/api/auth/forgot-password` | Request password reset (verifikasi NIM + email) | ❌ |
 
 ### Queue Management
 
@@ -882,6 +919,13 @@ flowchart TD
 | `DELETE` | `/api/enrollment/:id` | Drop enrollment | ✅ | RequireQueueActive |
 | `GET` | `/api/enrollment/my-workshops` | List semua workshop yang terdaftar | ✅ | RequireQueueActive |
 
+### Enrollment History & Rating
+
+| Method | Endpoint | Deskripsi | Auth |
+|--------|----------|-----------|------|
+| `GET` | `/api/enrollment/history` | Riwayat semua workshop (completed/dropped) dengan rating | ✅ |
+| `POST` | `/api/enrollment/:id/rate` | Beri rating (1–5) dan review untuk workshop selesai | ✅ |
+
 ### Mentor Operations
 
 | Method | Endpoint | Deskripsi | Auth | Role |
@@ -901,6 +945,27 @@ flowchart TD
 | `DELETE` | `/api/mentor/users/:id` | Reject/remove user | ✅ | Mentor |
 | `GET` | `/api/mentor/students` | List semua students dengan info akademik | ✅ | Mentor |
 | `PUT` | `/api/mentor/students/:id/credit-limit` | Update batas kredit mahasiswa | ✅ | Mentor |
+
+### Mentor Feedback
+
+| Method | Endpoint | Deskripsi | Auth | Role |
+|--------|----------|-----------|------|------|
+| `GET` | `/api/mentor/feedback` | Aggregate student ratings & reviews per workshop | ✅ | Mentor |
+
+### Password Reset Management
+
+| Method | Endpoint | Deskripsi | Auth | Role |
+|--------|----------|-----------|------|------|
+| `GET` | `/api/mentor/password-resets` | List all password reset requests (filter by status) | ✅ | Mentor |
+| `POST` | `/api/mentor/password-resets/:id/approve` | Approve password reset request | ✅ | Mentor |
+| `POST` | `/api/mentor/password-resets/:id/reject` | Reject password reset request | ✅ | Mentor |
+
+### AI Workshop Suggestions
+
+| Method | Endpoint | Deskripsi | Auth | Role |
+|--------|----------|-----------|------|------|
+| `POST` | `/api/mentor/ai/suggest` | Get AI-powered workshop suggestions (cache-first) | ✅ | Mentor |
+| `POST` | `/api/mentor/ai/suggest?refresh=true` | Force new AI generation (skip cache, replace) | ✅ | Mentor |
 
 ### WebSocket
 
@@ -939,6 +1004,7 @@ flowchart TD
 | `seat_lock:{seatId}` | STRING | 10s | Distributed lock saat proses reservasi kursi |
 | `seat_reservation:{seatId}:{userId}` | STRING | 5 min | Reservasi kursi temporary sebelum konfirmasi enrollment |
 | `active_token:{userId}` | STRING | 24h | JWT token aktif untuk single-session enforcement |
+| `ai:suggestions:cache` | STRING (JSON) | 7 days | Cached AI workshop suggestions (suggestions + feedback data + timestamps) |
 
 ---
 
@@ -949,7 +1015,7 @@ uksw-workshop-platform/
 ├── backend/
 │   └── backend-service/
 │       ├── main.go                    # Entry point, routes setup, background workers
-│       ├── handlers.go                # REST API handlers (Auth, Queue, Workshop, Enrollment)
+│       ├── handlers.go                # REST API handlers (Auth, Queue, Workshop, Enrollment, Rating, Password Reset, AI)
 │       ├── services.go                # Business logic (Auth, Queue WAR MODE, Workshop CRUD, Enrollment)
 │       ├── middleware.go              # CORS, RateLimit, AuthMiddleware, RequireRole, RequireQueueActive
 │       ├── jwt.go                     # JWT token generation & validation
@@ -960,6 +1026,9 @@ uksw-workshop-platform/
 │       ├── user_management.go         # User approval workflow (get, approve, reject)
 │       ├── user_management_handlers.go # User management REST handlers
 │       ├── credit_limit.go            # Student credit limit management
+│       ├── ai_services.go             # AI workshop suggestions (HuggingFace + Redis cache)
+│       ├── rating_services.go         # Workshop rating, review, and enrollment history
+│       ├── password_reset_services.go  # Password reset workflow (request, approve, reject)
 │       ├── telemetry.go               # OpenTelemetry/Jaeger tracer initialization
 │       ├── go.mod / go.sum            # Go module dependencies
 │       └── Dockerfile                 # Backend container build
@@ -969,24 +1038,28 @@ uksw-workshop-platform/
 │   │   ├── main.jsx                   # React entry point
 │   │   ├── index.css                  # Global styles
 │   │   ├── api/
-│   │   │   └── client.js             # APIClient class (REST + WebSocket)
+│   │   │   └── client.js             # APIClient class (REST + WebSocket + AI)
 │   │   ├── context/
 │   │   │   └── AuthContext.jsx        # Authentication context provider
 │   │   ├── components/
 │   │   │   ├── SeatMap.jsx            # Interactive seat map with real-time updates
 │   │   │   ├── UserManagement.jsx     # User approval & credit limit UI
+│   │   │   ├── AISuggestions.jsx      # AI workshop suggestions panel (cache-first + refresh)
+│   │   │   ├── NotificationBell.jsx   # Real-time notification bell
 │   │   │   ├── Toast.jsx              # Toast notification system
 │   │   │   ├── SessionTimeoutModal.jsx # Session timeout warning modal
 │   │   │   ├── LoadingSpinner.jsx     # Loading indicator
-│   │   │   └── Header.jsx            # App header
+│   │   │   └── Header.jsx            # App header with notification bell
 │   │   ├── pages/
 │   │   │   ├── Login.jsx              # Login page (Student/Mentor toggle)
 │   │   │   ├── Register.jsx           # Registration page
+│   │   │   ├── ForgotPassword.jsx     # Self-service password reset page
 │   │   │   ├── Welcome.jsx            # Student welcome/landing page
 │   │   │   ├── Queue.jsx              # Queue waiting page with position updates
 │   │   │   ├── WorkshopSelection.jsx  # Workshop browse + seat map + enrollment
 │   │   │   ├── RegistrationSuccess.jsx # Enrollment summary page
-│   │   │   ├── MentorDashboard.jsx    # Mentor dashboard (4 tabs)
+│   │   │   ├── EnrollmentHistory.jsx  # Workshop history with rating & review UI
+│   │   │   ├── MentorDashboard.jsx    # Mentor dashboard (6 tabs)
 │   │   │   └── CourseRegistration.jsx # Course registration view
 │   │   └── utils/                     # Utility functions
 │   ├── vite.config.js                 # Vite configuration
@@ -1006,15 +1079,17 @@ uksw-workshop-platform/
 │       ├── V9__seed_registration_dates.sql   # Seed registration date data
 │       ├── V10__sync_schedule_days_with_date.sql # Sync schedule with dates
 │       ├── V11__fix_seed_data.sql            # Fix seed data
-│       └── V12__disable_auto_seat_trigger.sql # Disable auto seat trigger
-├── docs/
-│   ├── DOCUMENTATION.md              # This file
-│   └── DOCUMENTATION.html            # HTML version with rendered diagrams
-├── docker-compose.yml                # 7-service Docker Compose configuration
+│       ├── V12__add_enrollment_rating.sql    # Add rating & review columns to enrollments
+│       ├── V13__seed_history_data.sql        # Seed historical workshop sessions
+│       ├── V14__seed_enrollment_history.sql  # Seed completed enrollments with ratings
+│       ├── V15__password_resets.sql          # Password resets table schema
+│       ├── V16__seed_active_enrollments.sql  # Seed active workshop enrollments
+│       └── V17__fix_seed_descriptions_and_seats.sql # Rich descriptions + occupied seat assignments
+├── docker-compose.yml                # 9-service Docker Compose configuration
 ├── deploy.sh                         # Deployment script
 ├── clean-rebuild.sh                  # Clean rebuild script
 ├── quickstart.sh                     # Quick start script
-├── .env                              # Environment variables
+├── .env                              # Environment variables (HUGGINGFACE_API_KEY, NGROK_AUTHTOKEN)
 └── .gitignore                        # Git ignore rules
 ```
 
@@ -1055,7 +1130,7 @@ Request → Logger → Recovery → OTEL Tracing → CORS → [RateLimit] → Ro
 
 ---
 
-## Penjelasan Detail: Kafka, Redis, dan WebSocket
+## Penjelasan Detail: Kafka, Redis, WebSocket, dan AI
 
 ### 🔴 REDIS — "Otak Cepat" Sistem
 
@@ -1380,6 +1455,153 @@ WebSocket adalah koneksi **2 arah yang persisten** antara browser dan server. Be
 
 ---
 
+### 🤖 HUGGINGFACE AI — "Penasihat Pintar" Sistem
+
+**Apa itu HuggingFace Inference API?**
+HuggingFace adalah platform AI terbesar di dunia, sering disebut sebagai "GitHub-nya Machine Learning". Melalui *Inference API*, kita tidak perlu menjalankan model AI berat di server kita sendiri, melainkan cukup memanggil API mereka dan biarkan server HuggingFace yang melakukan komputasi berat.
+
+**Mengenal Model: Llama 3.1 8B-Instruct**
+Sistem ini menggunakan model **Llama 3.1** buatan Meta (induk perusahaan Facebook/WhatsApp) versi **8B** (8 Miliar parameter). Label **Instruct** berarti model ini sudah dilatih khusus untuk mematuhi perintah/instruksi yang rapi (seperti "berikan output dalam format JSON strict!"), sangat cocok untuk tugas backend seperti ini.
+
+**Apa itu Token?**
+Dalam dunia LLM (Large Language Model), AI tidak membaca "kata", melainkan "token". Satu token biasanya setara dengan ~4 karakter bahasa Inggris (sekitar 3/4 kata). 
+- `max_tokens: 800` pada konfigurasi kita berarti kita membatasi agar AI membalas **maksimal** sekitar 600 kata teks. Ini penting agar proses lebih cepat dan format JSON tidak terpotong (ter-truncate) di tengah jalan yang akan menyebabkan error *parsing* di backend.
+
+#### Konfigurasi AI di sistem ini:
+- **Model:** `meta-llama/Llama-3.1-8B-Instruct`
+- **Endpoint:** `https://router.huggingface.co/v1/chat/completions` (OpenAI-compatible API)
+- **Input:** Feedback (rating + review) dari **5 workshop terakhir yang selesai** (status = `done`)
+- **Output:** Array of 3–5 rekomendasi workshop dalam format JSON
+- **Cache:** Redis key `ai:suggestions:cache`, TTL **7 hari**
+- **Timeout:** 60 detik
+
+#### Apa yang AI lakukan di sistem ini?
+
+##### 1. Alur "Tab AI Insights Dibuka" (Cache-First)
+**File:** `ai_services.go` → `GetCachedAISuggestions()`, `handlers.go` → `handleGetAISuggestions()`
+
+**Step-by-step:**
+1. Mentor buka tab "AI Insights" di dashboard
+2. Frontend kirim request ke backend: `POST /api/mentor/ai/suggest`
+3. Backend panggil `GetCachedAISuggestions()`:
+   ```go
+   // Cek Redis dulu
+   cached, err := redisClient.Get(ctx, "ai:suggestions:cache").Result()
+   if err == nil {
+       // Cache HIT → parse JSON dan langsung return ke frontend
+       json.Unmarshal([]byte(cached), &result)
+       return &result, nil
+   }
+   // Cache MISS → panggil HuggingFace
+   return generateAndCacheSuggestions(ctx)
+   ```
+4. Jika **cache HIT** → langsung return data tersimpan (response < 10ms)
+5. Jika **cache MISS** → lanjut ke step generasi AI
+
+##### 2. Generasi Rekomendasi dari AI (Cache Miss / Force Refresh)
+**File:** `ai_services.go` → `generateAndCacheSuggestions()`, `GetLastDoneWorkshopsFeedback()`, `GenerateWorkshopSuggestions()`
+
+**Step-by-step:**
+1. **Ambil feedback dari database** — query `GetLastDoneWorkshopsFeedback()`:
+   ```sql
+   SELECT w.name, w.code, e.rating, e.review, e.rated_at
+   FROM enrollments e
+   JOIN workshop_sessions ws ON ws.id = e.class_id
+   JOIN workshops w ON w.id = ws.workshop_id
+   WHERE ws.status = 'done'
+     AND e.rating IS NOT NULL
+   ORDER BY ws.date DESC
+   LIMIT 5 workshops worth of data
+   ```
+   Hasilnya: nama workshop, kode, semua rating, semua review dari 5 workshop terakhir selesai.
+
+2. **Bangun prompt** — `buildLastDonePrompt(data)`:
+   ```
+   Prompt berisi:
+   - Summary: "5 workshop terakhir selesai, X total feedback, avg rating Y"
+   - Setiap feedback: workshop name, rating (1-5), review text
+   - Instruksi: "Suggest 3-5 NEW workshops in strict JSON array format:
+     [{name, rationale, workshopType, credits, quota, inspiredBy}]"
+   ```
+
+3. **Kirim ke HuggingFace** — `GenerateWorkshopSuggestions()`:
+   Karena sistem memakai `router.huggingface.co`, kita bisa menggunakan format payload yang kompatibel dengan OpenAI (Chat Completions):
+   ```go
+   hfPayload := map[string]interface{}{
+       "model": "meta-llama/Llama-3.1-8B-Instruct",
+       "messages": []map[string]string{
+           {"role": "user", "content": prompt},
+       },
+       "max_tokens":  800,
+       "temperature": 0.7,
+   }
+   // POST ke https://router.huggingface.co/v1/chat/completions
+   // Header: Authorization: Bearer {HUGGINGFACE_API_KEY}
+   ```
+
+4. **Terima & Parse Response Wrapper** — Model akan membalas dengan JSON structure bawaan OpenAI. Backend men-decode bagian pesan utamanya saja:
+   ```go
+   var hfResponse struct {
+       Choices []struct {
+           Message struct {
+               Content string `json:"content"`
+           } `json:"message"`
+       } `json:"choices"`
+   }
+   generatedText := hfResponse.Choices[0].Message.Content
+   ```
+
+5. **Ekstrak & Validasi Data (Sanitization)** — `extractSuggestionsFromText(text)`:
+   Model AI terkadang menambahkan kalimat pembuka/penutup (seperti *"Here are the suggestions..."*) di luar JSON. Backend kita cukup tahan banting (resilient) untuk mengatasinya:
+   - **Ekstraksi:** Mencari index karakter `[` pertama dan `]` terakhir, lalu memotong string hanya pada bagian itu.
+   - **Unmarshal:** Mengonversi string murni JSON tersebut ke array dari struct Go `[]AISuggestion`.
+   - **Validasi (Fallback):** 
+     - Jika `WorkshopType` dikarang bebas oleh AI (tidak sesuai enum valid) 👉 diubah paksa jadi `"General"`
+     - Jika `Credits` tidak masuk akal (< 1 atau > 6) 👉 di-reset ke `2`
+     - Jika `Quota` berlebihan atau terlalu sedikit (< 10 atau > 100) 👉 di-reset ke `30`
+
+6. **Simpan ke Redis** — cache object hasil sanitasi selama 7 hari:
+   ```go
+   cacheBlob := AISuggestionCache{
+       Suggestions: suggestions, // Data bersih & valid!
+       Feedback:    *feedbackData,
+       CachedAt:    time.Now(),
+       ExpiresAt:   time.Now().Add(7 * 24 * time.Hour),
+   }
+   redisClient.Set(ctx, "ai:suggestions:cache", jsonBytes, 7*24*time.Hour)
+   ```
+
+7. **Return ke frontend** — JSON bersih dengan suggestions + data pendukung siap dirender UI.
+
+##### 3. Alur "Tombol Refresh" (Force Refresh)
+**File:** `ai_services.go` → `RefreshAISuggestionsCache()`, `handlers.go` → `handleGetAISuggestions()` dengan `?refresh=true`
+
+**Step-by-step:**
+1. Mentor klik tombol "Refresh Insights" di frontend
+2. Frontend kirim `POST /api/mentor/ai/suggest?refresh=true`
+3. Backend deteksi query param `refresh=true` → panggil `RefreshAISuggestionsCache()`:
+   ```go
+   // Langkah 1: Hapus cache lama
+   redisClient.Del(ctx, "ai:suggestions:cache")
+   // Langkah 2: Generasi baru dari HuggingFace
+   return generateAndCacheSuggestions(ctx)
+   ```
+4. **Skip Redis check** sama sekali → langsung panggil HuggingFace
+5. Simpan hasil baru di Redis (menggantikan yang lama)
+6. Return suggestions baru ke frontend
+
+#### Mengapa cache 7 hari, bukan real-time?
+
+| Aspek | Tanpa Cache (Real-time) | Dengan Redis Cache (7 hari) |
+|-------|------------------------|-----------------------------|
+| Latency | 30–90 detik per request | < 10ms (dari RAM) |
+| Biaya API | Setiap kali tab dibuka | Hanya saat refresh manual |
+| Rate limit | Sering kena limit HuggingFace | Aman, minimal panggilan |
+| Relevansi | Selalu fresh tapi lambat | Cukup fresh (workshop selesai tidak setiap hari) |
+| User experience | Loading lama, frustasi | Instan, smooth |
+
+Suggestions tidak perlu diperbarui setiap saat karena workshop baru yang selesai tidak terjadi setiap menit — seminggu sekali sudah cukup relevan.
+
 ## 🍼 Penjelasan Bahasa Bayi (Analogi Sederhana)
 
 ### Redis = "Papan Tulis di Dinding"
@@ -1580,12 +1802,15 @@ SKENARIO: 100 mahasiswa join queue bersamaan, limit = 10 slot
 
 | Komponen | Peran Utama | Analogi Bahasa Bayi |
 |----------|------------|---------------------|
-| **Redis** | Menyimpan data yang harus diakses **sangat cepat**: siapa yang aktif, siapa yang antri, siapa yang pegang kursi, token login | **Papan tulis** — semua orang bisa baca/tulis dengan cepat, tapi tulisan bisa dihapus otomatis (TTL) |
+| **Redis** | Menyimpan data yang harus diakses **sangat cepat**: siapa yang aktif, siapa yang antri, siapa yang pegang kursi, token login, AI cache | **Papan tulis** — semua orang bisa baca/tulis dengan cepat, tapi tulisan bisa dihapus otomatis (TTL) |
 | **Kafka** | Menjamin **urutan antrian yang adil** (FIFO). Yang request duluan, dilayani duluan. Tidak bisa curang. | **Buku antrian** di taman hiburan — petugas catat nama satu per satu, panggil dari atas ke bawah |
 | **WebSocket** | Mengirim **notifikasi instan** ke browser. User tidak perlu refresh halaman. | **Walkie-talkie** — server bisa langsung teriak ke user tanpa user harus bertanya dulu |
+| **HuggingFace** | Platform raksasa tempat berkumpulnya model-model AI dari seluruh dunia. | **Biro Jasa Konsultan** — sebuah gedung besar berisi ratusan ahli; kita bayar mereka untuk mikir. |
+| **Llama 3.1** | Model AI spesifik (dikembangkan Meta) yang pintar mengikuti instruksi dan membalas dengan format yang diminta. | **Konsultan yang disewa** — dia pintar, penurut, dan kalau disuruh pakai "seragam" (format JSON), dia akan selalu pakai. |
+| **Token `(max_tokens)`** | Unit dasar hitungan teks AI (mirip suku kata). Membatasi token berarti mencegah output kepanjangan. | **Batas jumlah kata saat ceramah** — kita larang si Konsultan ngomong lebih dari 600 kata, supaya cepat selesai dan nggak ngelantur. |
 
 ---
 
 **© 2026 Universitas Kristen Satya Wacana**
 
-Terakhir diperbarui: 14 Februari 2026
+Terakhir diperbarui: 21 Februari 2026
