@@ -276,6 +276,10 @@ class APIClient {
         })
     }
 
+    async getAISuggestions() {
+        return this.request('/mentor/ai/suggest', { method: 'POST' })
+    }
+
     async getAllUsers(status = 'all') {
         return this.request(`/mentor/users?status=${status}`, {
             method: 'GET',
@@ -381,6 +385,18 @@ class APIClient {
             }
             this.wsListeners = []
         }
+    }
+
+    async getAISuggestions(refresh = false) {
+        const url = refresh
+            ? `${API_BASE_URL}/mentor/ai/suggest?refresh=true`
+            : `${API_BASE_URL}/mentor/ai/suggest`
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${this.token}`, 'Content-Type': 'application/json' },
+        })
+        if (!res.ok) throw new Error((await res.json()).message || 'AI request failed')
+        return res.json()
     }
 }
 

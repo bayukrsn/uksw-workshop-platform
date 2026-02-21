@@ -5,6 +5,8 @@ import { useToast } from '../components/Toast'
 import LoadingSpinner from '../components/LoadingSpinner'
 import SeatMap from '../components/SeatMap'
 import { UserManagement } from '../components/UserManagement'
+import AISuggestions from '../components/AISuggestions'
+import NotificationBell from '../components/NotificationBell'
 
 export default function MentorDashboard() {
     const { user, logout } = useAuth()
@@ -14,7 +16,7 @@ export default function MentorDashboard() {
     const [isEditModalOpen, setIsEditModalOpen] = useState(false)
     const [editingWorkshop, setEditingWorkshop] = useState(null)
     const [monitoringSessionId, setMonitoringSessionId] = useState(null)
-    const [activeTab, setActiveTab] = useState('workshops') // 'workshops' | 'schedule' | 'traffic' | 'students' | 'feedback'
+    const [activeTab, setActiveTab] = useState('workshops') // 'workshops' | 'schedule' | 'traffic' | 'students' | 'feedback' | 'ai'
     const [expandedWorkshopId, setExpandedWorkshopId] = useState(null)
     const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false)
 
@@ -102,6 +104,13 @@ export default function MentorDashboard() {
                                 <span className={`material-symbols-outlined ${activeTab === 'feedback' ? 'text-primary' : 'text-text-muted group-hover:text-white'}`}>reviews</span>
                                 <p className={`text-sm font-medium leading-normal ${activeTab === 'feedback' ? 'text-white' : 'text-text-muted group-hover:text-white'}`}>Feedback</p>
                             </button>
+                            <button
+                                onClick={() => setActiveTab('ai')}
+                                className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors group cursor-pointer w-full text-left ${activeTab === 'ai' ? 'bg-primary/20 border border-primary/10' : 'hover:bg-accent-dark'}`}
+                            >
+                                <span className={`material-symbols-outlined ${activeTab === 'ai' ? 'text-primary' : 'text-text-muted group-hover:text-white'}`}>auto_awesome</span>
+                                <p className={`text-sm font-medium leading-normal ${activeTab === 'ai' ? 'text-white' : 'text-text-muted group-hover:text-white'}`}>AI Insights</p>
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -118,6 +127,7 @@ export default function MentorDashboard() {
                     </button>
 
                     <div className="flex flex-1 justify-end gap-3 items-center">
+                        <NotificationBell role="MENTOR" />
                         <div className="flex items-center gap-3 pl-4 border-l border-border-dark">
                             <div className="text-right hidden sm:block">
                                 <p className="text-white text-sm font-bold">{user?.name}</p>
@@ -153,6 +163,12 @@ export default function MentorDashboard() {
                         <UserManagement />
                     ) : activeTab === 'feedback' ? (
                         <MentorFeedback />
+                    ) : activeTab === 'ai' ? (
+                        <AISuggestions onCreateWorkshop={(prefill) => {
+                            setIsCreateModalOpen(true)
+                            // store prefill for modal
+                            window.__aiPrefill = prefill
+                        }} />
                     ) : (
                         <TrafficControl />
                     )}
@@ -180,7 +196,7 @@ export default function MentorDashboard() {
                         </div>
 
                         <div className="flex flex-col gap-2">
-                            {['workshops', 'schedule', 'traffic', 'students', 'feedback'].map(tab => (
+                            {['workshops', 'schedule', 'traffic', 'students', 'feedback', 'ai'].map(tab => (
                                 <button
                                     key={tab}
                                     onClick={() => {
@@ -190,10 +206,10 @@ export default function MentorDashboard() {
                                     className={`flex items-center gap-3 px-3 py-3 rounded-lg transition-colors group cursor-pointer w-full text-left ${activeTab === tab ? 'bg-primary/20 border border-primary/10' : 'hover:bg-accent-dark'}`}
                                 >
                                     <span className={`material-symbols-outlined ${activeTab === tab ? 'text-primary' : 'text-text-muted group-hover:text-white'}`}>
-                                        {tab === 'workshops' ? 'menu_book' : tab === 'schedule' ? 'calendar_month' : tab === 'traffic' ? 'traffic' : tab === 'students' ? 'people' : 'reviews'}
+                                        {tab === 'workshops' ? 'menu_book' : tab === 'schedule' ? 'calendar_month' : tab === 'traffic' ? 'traffic' : tab === 'students' ? 'people' : tab === 'feedback' ? 'reviews' : 'auto_awesome'}
                                     </span>
                                     <p className={`text-sm font-medium leading-normal ${activeTab === tab ? 'text-white' : 'text-text-muted group-hover:text-white'}`}>
-                                        {tab === 'workshops' ? 'My Workshops' : tab === 'schedule' ? 'Schedule' : tab === 'traffic' ? 'Traffic Control' : tab === 'students' ? 'Users' : 'Feedback'}
+                                        {tab === 'workshops' ? 'My Workshops' : tab === 'schedule' ? 'Schedule' : tab === 'traffic' ? 'Traffic Control' : tab === 'students' ? 'Users' : tab === 'feedback' ? 'Feedback' : 'AI Insights'}
                                     </p>
                                 </button>
                             ))}
@@ -210,7 +226,13 @@ export default function MentorDashboard() {
             )}
 
             {isCreateModalOpen && (
-                <CreateWorkshopModal onClose={() => setIsCreateModalOpen(false)} />
+                <CreateWorkshopModal
+                    onClose={() => {
+                        setIsCreateModalOpen(false)
+                        window.__aiPrefill = null
+                    }}
+                    prefill={window.__aiPrefill}
+                />
             )}
 
             {/* Edit Workshop Modal */}
@@ -490,21 +512,18 @@ function MentorSchedule({ workshops, onNavigateToWorkshop }) {
     )
 }
 
-function CreateWorkshopModal({ onClose }) {
-    // ... (Similar to CreateCourseModal but with workshop terminology if needed)
-    // For brevity, using same logic but renamed
+function CreateWorkshopModal({ onClose, prefill = null }) {
     const now = new Date()
     const { addToast } = useToast()
     const [formData, setFormData] = useState({
-        name: '',
+        name: prefill?.name || '',
         code: '',
-        credits: 2,
-        quota: 40,
-        workshopType: 'Technical',
-        workshopType: 'Technical',
-        date: now.toISOString().split('T')[0], // YYYY-MM-DD
-        registrationStart: now.toISOString().slice(0, 16), // YYYY-MM-DDTHH:mm
-        registrationEnd: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16), // +7 days
+        credits: prefill?.credits || 2,
+        quota: prefill?.quota || 40,
+        workshopType: prefill?.workshopType || 'Technical',
+        date: now.toISOString().split('T')[0],
+        registrationStart: now.toISOString().slice(0, 16),
+        registrationEnd: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16),
         timeStart: '08:00',
         timeEnd: '10:00',
         seatsEnabled: true,
@@ -633,7 +652,6 @@ function EditWorkshopModal({ workshop, onClose }) {
     const [formData, setFormData] = useState({
         name: workshop?.name || '',
         quota: workshop?.quota || 40,
-        workshopType: workshop?.workshopType || 'General',
         workshopType: workshop?.workshopType || 'General',
         date: workshop?.date || now.toISOString().split('T')[0],
         registrationStart: workshop?.registrationStart || now.toISOString().slice(0, 16),
@@ -974,11 +992,10 @@ function WorkshopAccordionItem({ workshop, defaultOpen = false, isRegistrationCl
                                 onClick={() => !isRegistrationClosed && onEdit && onEdit(workshop)}
                                 disabled={isRegistrationClosed}
                                 title={isRegistrationClosed ? 'Registration is closed — editing disabled' : 'Edit workshop'}
-                                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-colors whitespace-nowrap ${
-                                    isRegistrationClosed
-                                        ? 'bg-white/5 border border-white/10 text-text-muted cursor-not-allowed opacity-50'
-                                        : 'bg-blue-500/20 border border-blue-500/50 text-blue-400 hover:bg-blue-500/30 cursor-pointer'
-                                }`}
+                                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-colors whitespace-nowrap ${isRegistrationClosed
+                                    ? 'bg-white/5 border border-white/10 text-text-muted cursor-not-allowed opacity-50'
+                                    : 'bg-blue-500/20 border border-blue-500/50 text-blue-400 hover:bg-blue-500/30 cursor-pointer'
+                                    }`}
                             >
                                 <span className="material-symbols-outlined text-[18px]">edit</span>
                                 Edit
@@ -998,11 +1015,10 @@ function WorkshopAccordionItem({ workshop, defaultOpen = false, isRegistrationCl
                                 onClick={() => !isRegistrationClosed && setIsQuotaModalOpen(true)}
                                 disabled={isRegistrationClosed}
                                 title={isRegistrationClosed ? 'Registration is closed — extending disabled' : 'Extend quota'}
-                                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-colors whitespace-nowrap ${
-                                    isRegistrationClosed
-                                        ? 'bg-white/5 border border-white/10 text-text-muted cursor-not-allowed opacity-50'
-                                        : 'border border-primary/30 text-primary hover:bg-primary-hover cursor-pointer'
-                                }`}
+                                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-colors whitespace-nowrap ${isRegistrationClosed
+                                    ? 'bg-white/5 border border-white/10 text-text-muted cursor-not-allowed opacity-50'
+                                    : 'border border-primary/30 text-primary hover:bg-primary-hover cursor-pointer'
+                                    }`}
                             >
                                 <span className="material-symbols-outlined text-[18px]">add_circle</span>
                                 Extend

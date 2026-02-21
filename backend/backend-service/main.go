@@ -198,6 +198,9 @@ func setupRoutes(router *gin.Engine) {
 			mentor.GET("/password-resets", handleGetPasswordResetRequests)
 			mentor.POST("/password-resets/:id/approve", handleApprovePasswordReset)
 			mentor.POST("/password-resets/:id/reject", handleRejectPasswordReset)
+
+			// AI workshop suggestions
+			mentor.POST("/ai/suggest", handleGetAISuggestions)
 		}
 	}
 }

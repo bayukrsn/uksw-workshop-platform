@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import NotificationBell from './NotificationBell'
 
 export default function Header({ title = 'UKSW Workshops Platform' }) {
     const { user, logout } = useAuth()
@@ -43,6 +44,8 @@ export default function Header({ title = 'UKSW Workshops Platform' }) {
                         </div>
                     </div>
                 )}
+
+                <NotificationBell role={user?.role || 'STUDENT'} />
 
                 <button
                     onClick={handleLogout}

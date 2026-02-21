@@ -163,8 +163,12 @@ services:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
       OTEL_SERVICE_NAME: backend-service
       OTEL_TRACES_EXPORTER: otlp
+      HUGGINGFACE_API_KEY: ${HUGGINGFACE_API_KEY}
     ports:
       - "8080:8080"
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     networks:
       - sia-network
     healthcheck:

@@ -20,6 +20,7 @@ var upgrader = websocket.Upgrader{
 // WebSocket client structure
 type WSClient struct {
 	UserID string
+	Role   string
 	Conn   *websocket.Conn
 	Send   chan []byte
 	once   sync.Once
@@ -132,6 +133,27 @@ func notifyAll(messageType string, payload map[string]interface{}) {
 	}
 }
 
+// notifyRole sends a notification to all connected users with the given role
+func notifyRole(role string, messageType string, payload map[string]interface{}) {
+	wsHub.mu.RLock()
+	targets := make([]*WSClient, 0)
+	for _, client := range wsHub.clients {
+		if client.Role == role {
+			targets = append(targets, client)
+		}
+	}
+	wsHub.mu.RUnlock()
+
+	data, _ := json.Marshal(&WSMessage{Type: messageType, Payload: payload})
+	for _, client := range targets {
+		select {
+		case client.Send <- data:
+		default:
+			// channel full, skip
+		}
+	}
+}
+
 // Handle WebSocket connections
 func handleWebSocket(c *gin.Context) {
 	// Get user ID from token
@@ -150,8 +172,15 @@ func handleWebSocket(c *gin.Context) {
 
 	client := &WSClient{
 		UserID: userID.(string),
-		Conn:   conn,
-		Send:   make(chan []byte, 256),
+		Role: func() string {
+			r, _ := c.Get("role")
+			if s, ok := r.(string); ok {
+				return s
+			}
+			return ""
+		}(),
+		Conn: conn,
+		Send: make(chan []byte, 256),
 	}
 
 	wsHub.register <- client

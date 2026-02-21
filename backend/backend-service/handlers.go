@@ -3,6 +3,7 @@ package main
 import (
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -112,6 +113,12 @@ func handleRegister(c *gin.Context) {
 		}
 		return
 	}
+
+	// Notify all connected mentors about the new approval request
+	notifyRole("MENTOR", "APPROVAL_REQUEST", map[string]interface{}{
+		"name": req.Name,
+		"nim":  req.NimNidn,
+	})
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -603,6 +610,12 @@ func handleUpdateClassQuota(c *gin.Context) {
 		return
 	}
 
+	// Notify all users about quota change
+	notifyAll("QUOTA_UPDATED", map[string]interface{}{
+		"classId": req.ClassID,
+		"quota":   req.Quota,
+	})
+
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "Quota updated successfully"})
 }
 
@@ -627,6 +640,14 @@ func handleCreateClass(c *gin.Context) {
 		})
 		return
 	}
+
+	// Broadcast new workshop notification to all connected users
+	notifyAll("WORKSHOP_CREATED", map[string]interface{}{
+		"name":         req.Name,
+		"code":         req.Code,
+		"workshopType": req.WorkshopType,
+		"date":         req.Date,
+	})
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -783,6 +804,11 @@ func handleRequestPasswordReset(c *gin.Context) {
 		return
 	}
 
+	// Notify all mentors about the password reset request
+	notifyRole("MENTOR", "PASSWORD_RESET_REQUEST", map[string]interface{}{
+		"nim": req.NIM,
+	})
+
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "Password reset request submitted. Please wait for mentor approval."})
 }
 
@@ -833,4 +859,50 @@ func handleRejectPasswordReset(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "Password reset request rejected."})
+}
+
+// ─── AI Suggestion Handler ────────────────────────────────────────────────────
+
+func handleGetAISuggestions(c *gin.Context) {
+	forceRefresh := c.Query("refresh") == "true"
+
+	var cacheData *AISuggestionCache
+	var err error
+
+	if forceRefresh {
+		// Force refresh: skip cache, call HuggingFace, replace Redis cache
+		cacheData, err = RefreshAISuggestionsCache(c.Request.Context())
+	} else {
+		// Cache-first: check Redis, call HuggingFace only on miss
+		cacheData, err = GetCachedAISuggestions(c.Request.Context())
+	}
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   "AI_GENERATION_FAILED",
+			"message": err.Error(),
+		})
+		return
+	}
+
+	// Notify requesting mentor that suggestions are ready
+	if mentorId, ok := c.Get("userId"); ok {
+		notifyUser(mentorId.(string), "AI_SUGGESTION_READY", map[string]interface{}{
+			"count":     len(cacheData.Suggestions),
+			"fromCache": !forceRefresh,
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success":     true,
+		"suggestions": cacheData.Suggestions,
+		"cachedAt":    cacheData.CachedAt.Format(time.RFC3339),
+		"expiresAt":   cacheData.ExpiresAt.Format(time.RFC3339),
+		"feedback": gin.H{
+			"workshopCount": cacheData.Feedback.WorkshopCount,
+			"workshopNames": cacheData.Feedback.WorkshopNames,
+			"totalEntries":  cacheData.Feedback.TotalEntries,
+		},
+	})
 }
