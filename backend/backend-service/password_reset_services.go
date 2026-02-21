@@ -7,8 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"time"
-
-	"golang.org/x/crypto/bcrypt"
 )
 
 type PasswordResetRequest struct {
@@ -36,22 +34,16 @@ func RequestPasswordReset(ctx context.Context, nim, email, newPassword string) e
 		return fmt.Errorf("db error: %v", err)
 	}
 
-	// 2. Hash the new password
-	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
-	if err != nil {
-		return fmt.Errorf("failed to hash password: %v", err)
-	}
-
-	// 3. Cancel any existing PENDING requests for this user
+	// 2. Cancel any existing PENDING requests for this user
 	_, _ = db.ExecContext(ctx,
 		`UPDATE password_resets SET status = 'REJECTED', updated_at = $1 WHERE user_id = $2 AND status = 'PENDING'`,
 		time.Now(), userID,
 	)
 
-	// 4. Insert new pending request
+	// 3. Insert new pending request (store as plain text to match the auth system)
 	_, err = db.ExecContext(ctx,
 		`INSERT INTO password_resets (user_id, new_password_hash, status) VALUES ($1, $2, 'PENDING')`,
-		userID, string(hash),
+		userID, newPassword,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create reset request: %v", err)
